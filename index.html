@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Adaptive Chess</title>
+
+<link rel="manifest" href="manifest.json">
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<link rel="apple-touch-icon" href="icon.png">
+
+<link rel="stylesheet" href="style.css">
+
+</head>
+
+<body>
+
+<h2>Adaptive ELO Chess</h2>
+
+<div id="info"></div>
+<div id="board"></div>
+
+<button onclick="newGame()">New Game</button>
+
+<script src="chess.js"></script>
+<script src="stockfish.js"></script>
+<script src="app.js"></script>
+
+<script>
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js");
+}
+</script>
+
+</body>
+</html>
