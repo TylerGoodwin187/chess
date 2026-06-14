@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Chess">
+<title>Chess Training</title>
+<style>
+:root {
+  --bg: #111112; --surface: #1c1c1e; --border: #38383a;
+  --ls: #d4a96a; --ds: #7a5232; --ls-sel: #f0d060; --ds-sel: #c8901a;
+  --text: #f2ede6; --accent: #e8c44a; --red: #e05555;
+}
+
+* { 
+  box-sizing: border-box; 
+  margin: 0; 
+  padding: 0; 
+  user-select: none; 
+  -webkit-tap-highlight-color: transparent; 
+}
+
+body { 
+  background: var(--bg); 
+  color: var(--text); 
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; 
+  display: flex; 
+  flex-direction: column; 
+  height: 100dvh; 
+  overflow: hidden; 
+}
+
+/* Layout & Headers */
+.top-bar { display: flex; justify-content: space-between; align-items: center; background: var(--surface); border-bottom: 1px solid var(--border); }
+.player-label { font-weight: bold; padding: 12px 15px; text-align: center; font-size: 15px; }
+
+/* Main Area & Eval */
+.main-area { display: flex; flex: 1; justify-content: center; align-items: center; padding: 10px; position: relative; }
+
+.eval-container { 
+  width: 12px; height: 100%; max-height: 400px; 
+  background: #333; margin-right: 12px; border-radius: 6px; 
+  overflow: hidden; position: relative; display: flex; 
+  flex-direction: column; justify-content: flex-end;
+}
+.eval-bar { width: 100%; background: #fff; height: 50%; transition: height 0.3s ease; }
+
+/* Chess Board */
+.board-wrapper { position: relative; width: 100%; max-width: 400px; aspect-ratio: 1; }
+.board { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: 100%; height: 100%; border: 2px solid var(--border); border-radius: 4px; overflow: hidden;}
+.sq { position: relative; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
+.sq.light { background: var(--ls); }
+.sq.dark { background: var(--ds); }
+.sq.sel { background: var(--ls-sel) !important; }
+.sq.dark.sel { background: var(--ds-sel) !important; }
+
+.sq.last-move::after { 
+  content: ''; position: absolute; inset: 0; 
+  background: rgba(255, 255, 0, 0.35); pointer-events: none; 
+}
+
+.piece { width: 95%; height: 95%; z-index: 10; cursor: pointer; touch-action: none; }
+.ghost-piece { position: fixed; pointer-events: none; z-index: 999; }
+
+/* Edit Board Palette */
+.palette { 
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(28,28,30,0.95); display: none; flex-wrap: wrap; 
+  align-content: center; justify-content: center; gap: 8px; 
+  padding: 10px; z-index: 50; border-radius: 4px; 
+}
+.palette img { width: 45px; height: 45px; touch-action: none; }
+.palette-actions { width: 100%; display: flex; justify-content: center; gap: 15px; margin-top: 20px; }
+.palette-btn { padding: 8px 15px; background: var(--border); color: white; border: none; border-radius: 6px; font-weight: bold;}
+
+/* Action Controls */
+.controls { display: flex; gap: 10px; padding: 10px 15px; justify-content: center; background: var(--surface); }
+.btn { flex: 1; background: var(--border); color: var(--text); border: none; padding: 12px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+.btn:active { background: var(--accent); color: black; }
+
+/* Zig-Zag Move History */
+.history-container { 
+  position: relative; width: 100%; height: 65px; 
+  background: var(--bg); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); 
+}
+.history-scroll { overflow-x: auto; white-space: nowrap; height: 100%; padding-right: 60px; scrollbar-width: none; }
+.history-scroll::-webkit-scrollbar { display: none; }
+.move-row { height: 32px; line-height: 32px; }
+.move-cell { display: inline-block; width: 65px; text-align: center; font-family: monospace; font-size: 14px; color: var(--text); }
+.b-row { padding-left: 32.5px; } /* Exact offset for zig-zag center */
+
+.history-overlay { 
+  position: absolute; right: 0; top: 0; bottom: 0; width: 70px; 
+  background: linear-gradient(to right, transparent, var(--bg) 45%); 
+  display: flex; align-items: center; justify-content: flex-end; padding-right: 15px; z-index: 10; 
+}
+.copy-btn { background: none; border: none; color: var(--accent); font-size: 22px; cursor: pointer; }
+
+/* Sliding Tabs */
+.tabs-wrapper { padding: 15px; background: var(--bg); padding-bottom: 30px; }
+.tabs { display: flex; position: relative; background: var(--surface); border-radius: 25px; padding: 4px; }
+.tab { flex: 1; text-align: center; padding: 12px; z-index: 2; cursor: pointer; font-weight: bold; color: var(--text); transition: color 0.3s; }
+.tab.active { color: black; }
+.slider { 
+  position: absolute; top: 4px; left: 4px; 
+  width: calc(50% - 4px); height: calc(100% - 8px); 
+  background: var(--accent); border-radius: 21px; 
+  transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); z-index: 1; 
+}
+.mode-unrated .slider { transform: translateX(100%); }
+</style>
+</head>
+<body class="mode-rated">
+
+<div class="player-label" id="top-player">Stockfish (Black)</div>
+
+<div class="main-area">
+   <div class="eval-container" id="evalBar" style="display: none;">
+       <div class="eval-bar" id="evalFill"></div>
+   </div>
+
+   <div class="board-wrapper">
+       <div class="board" id="board"></div>
+       <div class="palette" id="palette"></div>
+   </div>
+</div>
+
+<div class="player-label" id="bottom-player">Human (White)</div>
+
+<div class="controls">
+   <button class="btn" id="flipBtn" onclick="doFlip()">Flip</button>
+   <button class="btn" id="undoBtn" style="display: none;" onclick="doUndo()">Undo</button>
+   <button class="btn" id="editBtn" style="display: none;" onclick="toggleEdit()">Edit Board</button>
+</div>
+
+<div class="history-container">
+   <div class="history-scroll" id="histScroll">
+       <div class="move-row w-row" id="w-moves"></div>
+       <div class="move-row b-row" id="b-moves"></div>
+   </div>
+   <div class="history-overlay">
+       <button class="copy-btn" onclick="copyPGN()">📋</button>
+   </div>
+</div>
+
+<div class="tabs-wrapper">
+   <div class="tabs" id="tabsContainer">
+       <div class="slider"></div>
+       <div class="tab active" id="tabRated" onclick="setMode('rated')">Rated</div>
+       <div class="tab" id="tabUnrated" onclick="setMode('unrated')">Unrated</div>
+   </div>
+</div>
+
+<script src="chess.min.js"></script>
+<script>
+let game = new Chess();
+let gameMode = 'rated';
+let playerColor = 'w';
+let flipped = false;
+let editMode = false;
+let selectedSq = null;
+let lastMove = null;
+
+// Drag state
+let dragging = false;
+let draggedPiece = null;
+let ghostPiece = null;
+let originSq = null;
+
+const SQUARES = [
+  'a8','b8','c8','d8','e8','f8','g8','h8',
+  'a7','b7','c7','d7','e7','f7','g7','h7',
+  'a6','b6','c6','d6','e6','f6','g6','h6',
+  'a5','b5','c5','d5','e5','f5','g5','h5',
+  'a4','b4','c4','d4','e4','f4','g4','h4',
+  'a3','b3','c3','d3','e3','f3','g3','h3',
+  'a2','b2','c2','d2','e2','f2','g2','h2',
+  'a1','b1','c1','d1','e1','f1','g1','h1'
+];
+const PIECES = ['pw','nw','bw','rw','qw','kw','pb','nb','bb','rb','qb','kb'];
+
+window.onload = () => {
+   initPalette();
+   setMode('rated');
+   render();
+};
+
+function initPalette() {
+   const pal = document.getElementById('palette');
+   PIECES.forEach(p => {
+       let img = document.createElement('img');
+       img.src = p[0] + p[1] + '.png'; 
+       img.dataset.type = p[0];
+       img.dataset.color = p[1];
+       img.className = 'palette-piece';
+       pal.appendChild(img);
+   });
+   let actions = document.createElement('div');
+   actions.className = 'palette-actions';
+   actions.innerHTML = `
+       <button class="palette-btn" onclick="game.clear(); render();">Clear</button>
+       <button class="palette-btn" onclick="game.reset(); render();">Reset</button>
+   `;
+   pal.appendChild(actions);
+}
+
+function setMode(mode) {
+   gameMode = mode;
+   if (mode === 'rated') {
+       document.body.classList.remove('mode-unrated');
+       document.body.classList.add('mode-rated');
+       document.getElementById('evalBar').style.display = 'none';
+       document.getElementById('undoBtn').style.display = 'none';
+       document.getElementById('editBtn').style.display = 'none';
+       document.getElementById('tabRated').classList.add('active');
+       document.getElementById('tabUnrated').classList.remove('active');
+       if (editMode) toggleEdit(); 
+   } else {
+       document.body.classList.remove('mode-rated');
+       document.body.classList.add('mode-unrated');
+       document.getElementById('evalBar').style.display = 'flex';
+       document.getElementById('undoBtn').style.display = 'block';
+       document.getElementById('editBtn').style.display = 'block';
+       document.getElementById('tabUnrated').classList.add('active');
+       document.getElementById('tabRated').classList.remove('active');
+   }
+}
+
+function doFlip() {
+   flipped = !flipped;
+   if (game.history().length === 0 && !editMode) {
+       playerColor = flipped ? 'b' : 'w';
+       if (playerColor === 'b' && game.turn() === 'w') {
+           triggerEngine();
+       }
+   }
+   render();
+}
+
+function updateLabels() {
+   const topLbl = document.getElementById('top-player');
+   const botLbl = document.getElementById('bottom-player');
+   botLbl.textContent = `Human (${flipped ? 'Black' : 'White'})`;
+   topLbl.textContent = `Stockfish (${flipped ? 'White' : 'Black'})`;
+}
+
+function toggleEdit() {
+   const btn = document.getElementById('editBtn');
+   if (editMode) {
+       let wk = 0, bk = 0;
+       SQUARES.forEach(sq => {
+           let p = game.get(sq);
+           if (p && p.type === 'k') p.color === 'w' ? wk++ : bk++;
+       });
+       if (wk !== 1 || bk !== 1) return alert("Board must have exactly one White King and one Black King.");
+       if (game.in_check()) return alert("Cannot start a position in check.");
+       
+       editMode = false;
+       btn.textContent = "Edit Board";
+       document.getElementById('palette').style.display = 'none';
+       
+       game.load(game.fen());
+       lastMove = null;
+       updateHist();
+
+       if (game.turn() !== playerColor) triggerEngine();
+   } else {
+       editMode = true;
+       btn.textContent = "Start Game";
+       document.getElementById('palette').style.display = 'flex';
+   }
+   render();
+}
+
+function doUndo() {
+   if (gameMode === 'rated') return;
+   game.undo(); 
+   game.undo(); 
+   lastMove = null;
+   updateHist();
+   render();
+}
+
+function copyPGN() {
+   navigator.clipboard.writeText(game.pgn());
+}
+
+// Universal Pointer Events (Drag & Drop + Tap)
+document.addEventListener('pointerdown', e => {
+   if (e.button > 0) return;
+   
+   const sqEl = e.target.closest('.sq');
+   const palEl = e.target.closest('.palette-piece');
+   
+   if (editMode && palEl) {
+       dragging = true; originSq = 'palette'; draggedPiece = e.target;
+       createGhost(e); return;
+   }
+
+   if (!sqEl) return;
+   const piece = sqEl.querySelector('.piece');
+   
+   if (piece) {
+       dragging = true; originSq = sqEl.dataset.sq; draggedPiece = piece;
+       createGhost(e); piece.style.opacity = '0';
+   } else if (selectedSq && !editMode) {
+       tryMove(selectedSq, sqEl.dataset.sq);
+       selectedSq = null;
+   }
+});
+
+document.addEventListener('pointermove', e => {
+   if (dragging && ghostPiece) {
+       ghostPiece.style.left = (e.clientX - ghostPiece.offsetWidth / 2) + 'px';
+       ghostPiece.style.top = (e.clientY - ghostPiece.offsetHeight / 2) + 'px';
+   }
+});
+
+document.addEventListener('pointerup', e => {
+   if (!dragging) return;
+   
+   if(ghostPiece) document.body.removeChild(ghostPiece);
+   ghostPiece = null; dragging = false;
+   if (draggedPiece) draggedPiece.style.opacity = '1';
+
+   const dropEl = document.elementFromPoint(e.clientX, e.clientY);
+   const targetSqEl = dropEl ? dropEl.closest('.sq') : null;
+
+   if (editMode) {
+       handleEditDrop(targetSqEl);
+   } else {
+       if (targetSqEl) {
+           const targetSq = targetSqEl.dataset.sq;
+           if (targetSq !== originSq) {
+               tryMove(originSq, targetSq); selectedSq = null;
+           } else {
+               selectedSq = originSq;
+           }
+       } else {
+           selectedSq = originSq;
+       }
+   }
+   render();
+});
+
+function createGhost(e) {
+   ghostPiece = document.createElement('img');
+   ghostPiece.src = draggedPiece.src;
+   ghostPiece.className = 'ghost-piece';
+   const rect = draggedPiece.getBoundingClientRect();
+   ghostPiece.style.width = rect.width + 'px';
+   ghostPiece.style.height = rect.height + 'px';
+   document.body.appendChild(ghostPiece);
+   ghostPiece.style.left = (e.clientX - rect.width / 2) + 'px';
+   ghostPiece.style.top = (e.clientY - rect.height / 2) + 'px';
+}
+
+function handleEditDrop(targetSqEl) {
+   if (originSq === 'palette') {
+       if (targetSqEl) {
+           const t = draggedPiece.dataset.type, c = draggedPiece.dataset.color;
+           if (t === 'k' && SQUARES.some(s => game.get(s)?.type === 'k' && game.get(s)?.color === c)) {
+               return alert('King already on board!');
+           }
+           game.put({ type: t, color: c }, targetSqEl.dataset.sq);
+       }
+   } else {
+       if (!targetSqEl) {
+           if (game.get(originSq)?.type === 'k') return alert('Cannot delete King!');
+           game.remove(originSq);
+       } else {
+           if (originSq !== targetSqEl.dataset.sq) {
+               game.put(game.get(originSq), targetSqEl.dataset.sq);
+               game.remove(originSq);
+           }
+       }
+   }
+}
+
+function tryMove(from, to) {
+   if (game.turn() !== playerColor) return; 
+   let move = game.move({ from: from, to: to, promotion: 'q' });
+   if (move) {
+       lastMove = { from: move.from, to: move.to };
+       updateHist(); render(); triggerEngine();
+   }
+}
+
+function triggerEngine() {
+   if (game.game_over()) return;
+   
+   /* TODO: Replace the setTimeout below with your existing Stockfish logic.
+      Example: stockfish.postMessage(`position fen ${game.fen()}`);
+   */
+   setTimeout(() => {
+       let moves = game.moves({ verbose: true });
+       if (moves.length === 0) return;
+       let m = moves[Math.floor(Math.random() * moves.length)];
+       game.move(m.san);
+       lastMove = { from: m.from, to: m.to };
+       updateHist(); render();
+   }, 300);
+}
+
+function render() {
+   updateLabels();
+   const boardEl = document.getElementById('board');
+   boardEl.innerHTML = '';
+   
+   let visualSquares = [...SQUARES];
+   if (flipped) visualSquares.reverse();
+
+   visualSquares.forEach(sq => {
+       let file = sq.charCodeAt(0) - 97, rank = parseInt(sq[1]);
+       let isDark = (file + rank) % 2 === 0;
+
+       let sqEl = document.createElement('div');
+       sqEl.className = `sq ${isDark ? 'dark' : 'light'}`;
+       sqEl.dataset.sq = sq;
+
+       if (sq === selectedSq) sqEl.classList.add('sel');
+       if (lastMove && (sq === lastMove.from || sq === lastMove.to)) sqEl.classList.add('last-move');
+
+       let p = game.get(sq);
+       if (p) {
+           let img = document.createElement('img');
+           img.className = 'piece';
+           img.src = p.type + p.color + '.png';
+           img.dataset.type = p.type;
+           img.dataset.color = p.color;
+           sqEl.appendChild(img);
+       }
+       boardEl.appendChild(sqEl);
+   });
+}
+
+function updateHist() {
+   const hist = game.history();
+   let wHtml = '', bHtml = '';
+   for (let i = 0; i < hist.length; i++) {
+       let cell = `<span class="move-cell">${hist[i]}</span>`;
+       if (i % 2 === 0) wHtml += cell; else bHtml += cell;
+   }
+   document.getElementById('w-moves').innerHTML = wHtml;
+   document.getElementById('b-moves').innerHTML = bHtml;
+   const scroll = document.getElementById('histScroll');
+   scroll.scrollLeft = scroll.scrollWidth;
+}
+</script>
+</body>
+</html>
