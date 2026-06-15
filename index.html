@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Chess">
-<title>Chess</title>
+<title>Chess with Clocks</title>
 <style>
 :root {
   --bg:#111112; --surface:#1c1c1e; --surface2:#2c2c2e; --border:#38383a;
@@ -43,64 +43,11 @@ body{
 .pdots i:nth-child(2){animation-delay:.18s}.pdots i:nth-child(3){animation-delay:.36s}
 @keyframes db{0%,80%,100%{transform:translateY(0);opacity:.35}40%{transform:translateY(-4px);opacity:1}}
 
-/* Chess Timers */
-.ptimer {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text);
-  background: var(--surface2);
-  padding: 4px 8px;
-  border-radius: 6px;
-  min-width: 58px;
-  text-align: center;
-}
-.ptimer.active {
-  background: var(--accent);
-  color: #111;
-}
-.ptimer.warn {
-  background: var(--red);
-  color: #fff;
-}
-
-/* Time Controls Panel */
-.tcontrols {
-  width: 100%;
-  max-width: 420px;
-  display: flex;
-  gap: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 6px 10px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: space-between;
-}
-.tcontrols label {
-  font-size: 11px;
-  color: var(--text2);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-}
-.tcontrols input {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 5px;
-  font-size: 12px;
-  width: 100%;
-  text-align: center;
-  font-weight: 600;
-}
-.tcontrols input:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+/* Clocks */
+.pclock{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;background:var(--surface2);padding:4px 8px;border-radius:6px;border:1px solid var(--border);min-width:54px;text-align:center}
+.pclock.running{background:var(--accent);color:#111;border-color:transparent}
+.pclock.low{background:var(--red);color:#fff;animation:flash-clock 0.5s infinite alternate}
+@keyframes flash-clock{from{opacity:1}to{opacity:0.6}}
 
 /* Eval bar - unrated only */
 .evalrow{width:100%;max-width:420px;display:flex;align-items:center;gap:8px;flex-shrink:0}
@@ -147,7 +94,7 @@ body{
 .status.alert{color:var(--accent);font-weight:600}
 .status.danger{color:var(--red);font-weight:600}
 
-/* Move list - two rows zig-zag, copy overlay */
+/* Move list */
 .histwrap{
   width:100%;max-width:420px;position:relative;flex-shrink:0;
   background:var(--surface);border:1px solid var(--border);border-radius:9px;
@@ -291,8 +238,8 @@ body{
     <div class="pname" id="name-top">Stockfish</div>
     <div class="prating" id="rtg-top">Elo 100</div>
     <span class="elo-delta" id="delta-top"></span>
-    <div class="ptimer" id="timer-top">05:00</div>
     <div class="pdots" id="dots"><i></i><i></i><i></i></div>
+    <div class="pclock" id="clock-top">10:00</div>
   </div>
 
   <div class="evalrow" id="evalrow">
@@ -307,7 +254,7 @@ body{
     <div class="pname" id="name-bottom">You</div>
     <div class="prating" id="rtg-bottom">Human</div>
     <span class="elo-delta" id="delta-bottom"></span>
-    <div class="ptimer" id="timer-bottom">05:00</div>
+    <div class="pclock" id="clock-bottom">10:00</div>
   </div>
 
   <div class="status" id="status">Loading…</div>
@@ -328,12 +275,6 @@ body{
         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
       </svg>
     </button>
-  </div>
-
-  <div class="tcontrols" id="tcontrols">
-    <label>Minutes <input type="number" id="tc-min" value="5" min="0" max="180"></label>
-    <label>Seconds <input type="number" id="tc-sec" value="0" min="0" max="59"></label>
-    <label>Increment (s) <input type="number" id="tc-inc" value="3" min="0" max="60"></label>
   </div>
 
   <div class="toggle-wrap" id="toggle-wrap">
@@ -374,7 +315,6 @@ body{
 <script>
 'use strict';
 
-// ── Piece image map ───────────────────────────────────────────
 function pieceImg(type, color) {
   return `./${type}${color}.png`;
 }
@@ -386,43 +326,38 @@ function getElo() {
   try {
     const v = parseInt(localStorage.getItem(ELO_KEY));
     return isNaN(v) ? memElo : v;
-  } catch (e) {
-    return memElo;
-  }
+  } catch (e) { return memElo; }
 }
 function setElo(v) {
   v = Math.max(0, v);
   memElo = v;
-  try {
-    localStorage.setItem(ELO_KEY, String(v));
-  } catch (e) {}
+  try { localStorage.setItem(ELO_KEY, String(v)); } catch (e) {}
   return v;
 }
 
-// ── State ─────────────────────────────────────────────────────
+// ── Core Game Engine State ─────────────────────────────────────
 let game        = new Chess();
 let sf          = null;
 let sfReady     = false;
 let sfResolve   = null;
 
-let sel         = null;   // selected square index 0–63
-let hints       = [];     // legal target indices
-let lastMv      = null;   // {from, to} indices
+let sel         = null;   
+let hints       = [];     
+let lastMv      = null;   
 let flipped     = false;
 let playerColor = 'w';
 let aiThinking  = false;
-let pendingPromo = null;  // {from, to} algebraic
+let pendingPromo = null;  
 let rated       = false;
-let gameStarted = false;  // becomes true after first move is made
+let gameStarted = false;  
 
-// Clock / Timer state
-let whiteTime       = 300000; // time left in ms
-let blackTime       = 300000;
-let timeIncrement   = 3000;   // increment in ms
-let clockInterval   = null;
-let turnStartTime   = null;   // timestamp when turn started
-let gameStartDateStr = "";
-let gameStartTimeStr = "";
+// ── Clock Variables ───────────────────────────────────────────
+let clocks = { w: 600, b: 600 }; // 10 minutes default
+let clockInterval = null;
+
+// ── Dual Memory Slots (Separate States) ───────────────────────
+let unratedSaveSlot = null;
+let ratedSaveSlot = null;
 
 // Drag state
 let dragPiece   = null;
@@ -431,12 +366,11 @@ let dragOffsetX = 0, dragOffsetY = 0;
 
 // Edit mode state
 let editMode    = false;
-let editBoard   = null;   // 64-array of {type,color}|null while editing
-let editTool    = null;   // {type,color} | 'trash' | null
+let editBoard   = null;   
+let editTool    = null;   
 
-const PIECE_TYPES = ['q','r','b','n','p'];
+const PIECE_TYPES = ['q','r','b','n','p']; 
 
-// ── Coordinate helpers ────────────────────────────────────────
 function idxToAlg(idx) {
   const col = idx % 8;
   const row = Math.floor(idx / 8);
@@ -446,7 +380,7 @@ function algToIdx(alg) {
   return (8 - parseInt(alg[1])) * 8 + (alg.charCodeAt(0) - 97);
 }
 
-// ── Stockfish ─────────────────────────────────────────────────
+// ── Stockfish Integration ──────────────────────────────────────
 function loadStockfish() {
   return new Promise((resolve, reject) => {
     try {
@@ -455,11 +389,7 @@ function loadStockfish() {
 
     sf.onmessage = ({ data: line }) => {
       if (typeof line !== 'string') return;
-
-      if (line === 'readyok') {
-        sfReady = true;
-        resolve();
-      }
+      if (line === 'readyok') { sfReady = true; resolve(); }
 
       if (line.startsWith('info') && line.includes('score')) {
         const cp   = line.match(/score cp (-?\d+)/);
@@ -471,13 +401,11 @@ function loadStockfish() {
           updateEvalBar(parseInt(mate[1]) > 0 ? 50 : -50);
         }
       }
-
       if (line.startsWith('bestmove') && sfResolve) {
         sfResolve(line.split(' ')[1]);
         sfResolve = null;
       }
     };
-
     sf.onerror = reject;
     sf.postMessage('uci');
     sf.postMessage('setoption name Hash value 32');
@@ -503,7 +431,65 @@ function sfGo(fen) {
   });
 }
 
-// ── Board build ───────────────────────────────────────────────
+// ── Clock Management ──────────────────────────────────────────
+function startClock() {
+  clearInterval(clockInterval);
+  clockInterval = setInterval(() => {
+    if (!gameStarted || game.game_over() || editMode || aiThinking) return;
+    
+    const turn = game.turn(); // 'w' or 'b'
+    clocks[turn] = Math.max(0, clocks[turn] - 1);
+    renderClocks();
+
+    if (clocks[turn] === 0) {
+      clearInterval(clockInterval);
+      handleTimeout(turn);
+    }
+  }, 1000);
+}
+
+function stopClock() {
+  clearInterval(clockInterval);
+}
+
+function renderClocks() {
+  const topClock = document.getElementById('clock-top');
+  const botClock = document.getElementById('clock-bottom');
+  
+  const whiteStr = formatTime(clocks.w);
+  const blackStr = formatTime(clocks.b);
+  
+  const youAreWhite = (playerColor === 'w');
+  const topTurn = flipped ? 'w' : 'b';
+  const botTurn = flipped ? 'b' : 'w';
+  
+  topClock.textContent = flipped ? whiteStr : blackStr;
+  botClock.textContent = flipped ? blackStr : whiteStr;
+  
+  // Highlight active running timer
+  const currentTurn = game.turn();
+  topClock.className = 'pclock' + (currentTurn === topTurn && gameStarted && !game.game_over() ? ' running' : '') + (clocks[topTurn] <= 30 ? ' low' : '');
+  botClock.className = 'pclock' + (currentTurn === botTurn && gameStarted && !game.game_over() ? ' running' : '') + (clocks[botTurn] <= 30 ? ' low' : '');
+}
+
+function formatTime(secs) {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+}
+
+function handleTimeout(loserColor) {
+  let em = '🏆', title, sub, eloChange = 0;
+  const youWon = (loserColor !== playerColor);
+  
+  title = youWon ? 'You Win!' : 'Stockfish Wins';
+  sub = 'Time out';
+  eloChange = youWon ? 30 : -30;
+  
+  triggerGameOver(em, title, sub, eloChange);
+}
+
+// ── Board Construction ────────────────────────────────────────
 function buildBoard() {
   const el = document.getElementById('board');
   const sz = Math.min(window.innerWidth - 20, window.innerHeight * 0.44, 420);
@@ -537,16 +523,15 @@ function buildBoard() {
     }
   }
   render();
+  renderClocks();
 }
 
-// ── Get current piece at idx ──────────────────────────────────
 function pieceAt(idx) {
   if (editMode) return editBoard[idx];
   const p = game.get(idxToAlg(idx));
   return p ? { type: p.type, color: p.color } : null;
 }
 
-// ── Render pieces + highlights ────────────────────────────────
 function render() {
   document.querySelectorAll('.sq').forEach(sqEl => {
     const idx = +sqEl.dataset.i;
@@ -588,17 +573,13 @@ function canDragFrom(idx) {
   return true;
 }
 
-// ── Drag handlers ─────────────────────────────────────────────
 function attachDragHandlers(img, idx) {
   img.addEventListener('pointerdown', (e) => onDragStart(e, idx));
 }
 
 function onDragStart(e, idx) {
-  if (editMode) {
-    if (editTool !== null) return;
-  } else {
-    if (!canDragFrom(idx)) return;
-  }
+  if (editMode) { if (editTool !== null) return; } 
+  else { if (!canDragFrom(idx)) return; }
   e.preventDefault();
 
   const srcImg = e.target;
@@ -655,10 +636,7 @@ function onDragEnd(e) {
   const sqEl = target ? target.closest('.sq') : null;
   const toIdx = sqEl ? +sqEl.dataset.i : null;
 
-  if (!moved || toIdx === null) {
-    render();
-    return;
-  }
+  if (!moved || toIdx === null) { render(); return; }
 
   if (editMode) {
     if (toIdx !== fromIdx) {
@@ -675,7 +653,6 @@ function onDragEnd(e) {
 
 function onPickerDragStart(e, type, color) {
   if (!editMode) return;
-
   const boardEl = document.getElementById('board');
   const size = boardEl.offsetWidth / 8;
   dragOffsetX = size / 2;
@@ -713,7 +690,6 @@ function onPickerDragEnd(e) {
   const { type, color, ghost, moved } = pickerDrag;
   pickerDrag = null;
   ghost.remove();
-
   if (!moved) return;
 
   const target = document.elementFromPoint(e.clientX, e.clientY);
@@ -724,7 +700,6 @@ function onPickerDragEnd(e) {
   render();
 }
 
-// ── Click handling ────────────────────────────────────────────
 function onSqClick(idx) {
   if (editMode) { onEditSqClick(idx); return; }
   if (!sfReady || aiThinking) return;
@@ -753,29 +728,22 @@ function onSqClick(idx) {
       hints = game.moves({ square: alg, verbose: true }).map(m => algToIdx(m.to));
       render();
     } else {
-      sel = null; hints = [];
-      render();
+      sel = null; hints = []; render();
     }
   }
 }
 
-// ── Attempt a move ────────────────────────────────────────────
 function attemptMove(fromIdx, toIdx) {
   const fromAlg = idxToAlg(fromIdx);
   const toAlg   = idxToAlg(toIdx);
   const moves   = game.moves({ square: fromAlg, verbose: true });
   const mv      = moves.find(m => m.to === toAlg);
 
-  if (!mv) {
-    sel = null; hints = [];
-    render();
-    return;
-  }
+  if (!mv) { sel = null; hints = []; render(); return; }
 
   if (mv.flags.includes('p')) {
     pendingPromo = { from: fromAlg, to: toAlg };
-    sel = null; hints = [];
-    render();
+    sel = null; hints = []; render();
     showPromo(playerColor);
     return;
   }
@@ -783,35 +751,16 @@ function attemptMove(fromIdx, toIdx) {
 }
 
 function doMove(from, to, promo) {
-  // Deduct player's elapsed time & process custom 1-second increment rule
-  if (!gameStarted) {
-    gameStarted = true;
-    const d = new Date();
-    gameStartDateStr = d.getFullYear() + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + String(d.getDate()).padStart(2, '0');
-    gameStartTimeStr = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
-    startClockInterval();
-    turnStartTime = Date.now();
-  } else {
-    const now = Date.now();
-    const elapsed = now - turnStartTime;
-    if (game.turn() === 'w') {
-      whiteTime -= elapsed;
-      if (elapsed <= 1000) whiteTime += timeIncrement;
-    } else {
-      blackTime -= elapsed;
-      if (elapsed <= 1000) blackTime += timeIncrement;
-    }
-    turnStartTime = now;
-  }
-
   const result = game.move({ from, to, promotion: promo || 'q' });
   if (!result) return;
 
+  gameStarted = true;
+  startClock(); // Safely activates the timer cycle on first move
   lastMv = { from: algToIdx(from), to: algToIdx(to) };
   sel = null; hints = [];
   render();
+  renderClocks();
   updateHist();
-  updateClockDisplays();
   updateStatus();
   checkOver();
   updateButtons();
@@ -821,7 +770,6 @@ function doMove(from, to, promo) {
   }
 }
 
-// ── Promotion ─────────────────────────────────────────────────
 function showPromo(color) {
   const types = ['q', 'r', 'b', 'n'];
   const cont  = document.getElementById('promo-pieces');
@@ -843,17 +791,16 @@ function showPromo(color) {
     };
     cont.appendChild(btn);
   });
-
   document.getElementById('promo-ov').classList.add('on');
 }
 
-// ── Stockfish move ────────────────────────────────────────────
 async function doAI() {
   if (aiThinking || !sfReady) return;
   aiThinking = true;
   document.getElementById('dots').classList.add('on');
   setStatus('Stockfish thinking…', '');
   render();
+  renderClocks();
 
   try {
     const moveStr = await sfGo(game.fen());
@@ -861,150 +808,22 @@ async function doAI() {
       const from  = moveStr.slice(0, 2);
       const to    = moveStr.slice(2, 4);
       const promo = moveStr[4] || undefined;
-      
-      // Deduct AI time & process custom 1-second increment rule
-      if (!gameStarted) {
-        gameStarted = true;
-        const d = new Date();
-        gameStartDateStr = d.getFullYear() + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + String(d.getDate()).padStart(2, '0');
-        gameStartTimeStr = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
-        startClockInterval();
-        turnStartTime = Date.now();
-      } else {
-        const now = Date.now();
-        const elapsed = now - turnStartTime;
-        if (game.turn() === 'w') {
-          whiteTime -= elapsed;
-          if (elapsed <= 1000) whiteTime += timeIncrement;
-        } else {
-          blackTime -= elapsed;
-          if (elapsed <= 1000) blackTime += timeIncrement;
-        }
-        turnStartTime = now;
-      }
-
       game.move({ from, to, promotion: promo });
+      gameStarted = true;
       lastMv = { from: algToIdx(from), to: algToIdx(to) };
     }
-  } catch(e) {
-    setStatus('Engine error', 'danger');
-  }
+  } catch(e) { setStatus('Engine error', 'danger'); }
 
   aiThinking = false;
   document.getElementById('dots').classList.remove('on');
   render();
+  renderClocks();
   updateHist();
-  updateClockDisplays();
   updateStatus();
   checkOver();
   updateButtons();
 }
 
-// ── Chess Clock Processing ────────────────────────────────────
-function formatTime(ms) {
-  if (ms < 0) ms = 0;
-  const totalSecs = Math.ceil(ms / 1000);
-  const mins = Math.floor(totalSecs / 60);
-  const secs = totalSecs % 60;
-  return String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
-}
-
-function updateClockDisplays() {
-  const topTimer = document.getElementById('timer-top');
-  const botTimer = document.getElementById('timer-bottom');
-
-  const topTime = flipped ? whiteTime : blackTime;
-  const botTime = flipped ? blackTime : whiteTime;
-
-  topTimer.textContent = formatTime(topTime);
-  botTimer.textContent = formatTime(botTime);
-
-  topTimer.classList.remove('active', 'warn');
-  botTimer.classList.remove('active', 'warn');
-
-  if (gameStarted && !game.game_over() && !editMode) {
-    if (game.turn() === 'w') {
-      if (flipped) topTimer.classList.add('active'); else botTimer.classList.add('active');
-    } else {
-      if (flipped) botTimer.classList.add('active'); else topTimer.classList.add('active');
-    }
-  }
-
-  if (topTime < 20000) topTimer.classList.add('warn');
-  if (botTime < 20000) botTimer.classList.add('warn');
-}
-
-function startClockInterval() {
-  if (clockInterval) clearInterval(clockInterval);
-  clockInterval = setInterval(() => {
-    if (!gameStarted || game.game_over() || editMode) {
-      clearInterval(clockInterval);
-      return;
-    }
-
-    const now = Date.now();
-    const elapsed = now - turnStartTime;
-
-    if (game.turn() === 'w') {
-      const timeLeft = whiteTime - elapsed;
-      if (timeLeft <= 0) {
-        whiteTime = 0;
-        clearInterval(clockInterval);
-        handleTimeout('w');
-        return;
-      }
-    } else {
-      const timeLeft = blackTime - elapsed;
-      if (timeLeft <= 0) {
-        blackTime = 0;
-        clearInterval(clockInterval);
-        handleTimeout('b');
-        return;
-      }
-    }
-    updateClockDisplays();
-  }, 100);
-}
-
-function handleTimeout(loserColor) {
-  if (clockInterval) clearInterval(clockInterval);
-  updateClockDisplays();
-  let em, title, sub, eloChange = 0;
-
-  const playerIsLoser = (playerColor === loserColor);
-  em    = playerIsLoser ? '💀' : '🏆';
-  title = playerIsLoser ? 'Stockfish Wins' : 'You Win!';
-  sub   = 'Timeout';
-  eloChange = playerIsLoser ? -30 : 30;
-
-  const ovElo = document.getElementById('ov-elo');
-  if (rated) {
-    const oldElo = getElo();
-    const newElo = setElo(oldElo + eloChange);
-    if (eloChange > 0) {
-      ovElo.textContent = `+${eloChange} Elo → ${newElo}`;
-      ovElo.className = 'ovelo up';
-    } else if (eloChange < 0) {
-      ovElo.textContent = `${eloChange} Elo → ${newElo}`;
-      ovElo.className = 'ovelo down';
-    } else {
-      ovElo.textContent = `Elo unchanged (${newElo})`;
-      ovElo.className = 'ovelo';
-    }
-    refreshStrips();
-    applyEloToEngine();
-  } else {
-    ovElo.textContent = 'Unrated — Elo unchanged';
-    ovElo.className = 'ovelo';
-  }
-
-  document.getElementById('ov-em').textContent = em;
-  document.getElementById('ov-t').textContent  = title;
-  document.getElementById('ov-s').textContent  = sub;
-  setTimeout(() => document.getElementById('ov').classList.add('on'), 200);
-}
-
-// ── Eval bar ──────────────────────────────────────────────────
 function updateEvalBar(score) {
   if (rated) return;
   const c = Math.max(-10, Math.min(10, score));
@@ -1012,7 +831,6 @@ function updateEvalBar(score) {
   document.getElementById('enum').textContent = (score > 0.05 ? '+' : '') + score.toFixed(1);
 }
 
-// ── Status ────────────────────────────────────────────────────
 function setStatus(msg, cls) {
   const el = document.getElementById('status');
   el.textContent = msg;
@@ -1028,7 +846,6 @@ function updateStatus() {
   else                                   setStatus('Stockfish · ' + who, '');
 }
 
-// ── Move history ──────────────────────────────────────────────
 function updateHist() {
   const rowsEl = document.getElementById('histrows');
   const hist = game.history();
@@ -1048,23 +865,19 @@ function updateHist() {
     const b = hist[i + 1];
 
     const num = document.createElement('span');
-    num.className = 'mn';
-    num.textContent = mn + '.';
+    num.className = 'mn'; num.textContent = mn + '.';
     whiteRow.appendChild(num);
 
     const wSpan = document.createElement('span');
-    wSpan.className = 'mv';
-    wSpan.textContent = w;
+    wSpan.className = 'mv'; wSpan.textContent = w;
     whiteRow.appendChild(wSpan);
 
     const spacer = document.createElement('span');
-    spacer.className = 'mv spacer';
-    spacer.textContent = w;
+    spacer.className = 'mv spacer'; spacer.textContent = w;
     blackRow.appendChild(spacer);
 
     const bSpan = document.createElement('span');
-    bSpan.className = 'mv';
-    bSpan.textContent = b || '';
+    bSpan.className = 'mv'; bSpan.textContent = b || '';
     if (!b) bSpan.classList.add('spacer');
     blackRow.appendChild(bSpan);
   }
@@ -1090,11 +903,6 @@ document.getElementById('copy-btn').addEventListener('click', () => {
   const hist = game.history();
   if (!hist.length) return;
   let text = '';
-  
-  if (gameStartDateStr) {
-    text += `[Date "${gameStartDateStr}"]\n[Time "${gameStartTimeStr}"]\n\n`;
-  }
-
   for (let i = 0; i < hist.length; i += 2) {
     const mn = i / 2 + 1;
     text += mn + '. ' + hist[i];
@@ -1111,21 +919,17 @@ document.getElementById('copy-btn').addEventListener('click', () => {
     navigator.clipboard.writeText(text).then(doFlash).catch(doFlash);
   } else {
     const ta = document.createElement('textarea');
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
+    ta.value = text; document.body.appendChild(ta); ta.select();
     try { document.execCommand('copy'); } catch(e) {}
-    ta.remove();
-    doFlash();
+    ta.remove(); doFlash();
   }
 });
 
-// ── Game over ─────────────────────────────────────────────────
 function checkOver() {
   if (!game.game_over()) return;
-  if (clockInterval) clearInterval(clockInterval);
+  stopClock();
+  
   let em, title, sub, eloChange = 0;
-
   if (game.in_checkmate()) {
     const won = game.turn() !== playerColor;
     em    = won ? '🏆' : '💀';
@@ -1141,8 +945,12 @@ function checkOver() {
           : '50-move rule';
     eloChange = 0;
   }
+  triggerGameOver(em, title, sub, eloChange);
+}
 
+function triggerGameOver(em, title, sub, eloChange) {
   const ovElo = document.getElementById('ov-elo');
+  
   if (rated) {
     const oldElo = getElo();
     const newElo = setElo(oldElo + eloChange);
@@ -1158,9 +966,11 @@ function checkOver() {
     }
     refreshStrips();
     applyEloToEngine();
+    sub += " (Rated Match)";
   } else {
     ovElo.textContent = 'Unrated — Elo unchanged';
     ovElo.className = 'ovelo';
+    sub += " (Unrated Match)";
   }
 
   document.getElementById('ov-em').textContent = em;
@@ -1169,124 +979,90 @@ function checkOver() {
   setTimeout(() => document.getElementById('ov').classList.add('on'), 700);
 }
 
-// ── Player strip labels ───────────────────────────────────────
 function refreshStrips() {
   const youAreWhite = playerColor === 'w';
   const elo = getElo();
-
   const topIsYou = flipped;
+  
   const youIcon = youAreWhite ? '♔' : '♚';
   const youIconCls = youAreWhite ? 'w' : 'b';
   const sfIcon = youAreWhite ? '♚' : '♔';
   const sfIconCls = youAreWhite ? 'b' : 'w';
 
   const topName  = topIsYou ? 'You' : 'Stockfish';
-  const botName  = topIsYou ? 'Stockfish' : 'You';
-  const topIconC = topIsYou ? youIcon : sfIcon;
-  const topIconCl= topIsYou ? youIconCls : sfIconCls;
-  const botIconC = topIsYou ? sfIcon : youIcon;
-  const botIconCl= topIsYou ? sfIconCls : youIconCls;
-
+  const botName  = topIsYou ? 'You' : 'Stockfish'; // normalized tracking
   document.getElementById('name-top').textContent = topName;
-  document.getElementById('name-bottom').textContent = botName;
-  document.getElementById('icon-top').textContent = topIconC;
-  document.getElementById('icon-top').className = 'picon ' + topIconCl;
-  document.getElementById('icon-bottom').textContent = botIconC;
-  document.getElementById('icon-bottom').className = 'picon ' + botIconCl;
+  document.getElementById('name-bottom').textContent = botName ? (topIsYou ? 'Stockfish' : 'You') : 'You';
+  
+  document.getElementById('icon-top').textContent = topIsYou ? youIcon : sfIcon;
+  document.getElementById('icon-top').className = 'picon ' + (topIsYou ? youIconCls : sfIconCls);
+  document.getElementById('icon-bottom').textContent = topIsYou ? sfIcon : youIcon;
+  document.getElementById('icon-bottom').className = 'picon ' + (topIsYou ? sfIconCls : youIconCls);
 
   document.getElementById('rtg-top').textContent = 'Elo ' + elo;
   document.getElementById('rtg-bottom').textContent = 'Elo ' + elo;
 
   const dots = document.getElementById('dots');
+  const clockTop = document.getElementById('clock-top');
+  const clockBot = document.getElementById('clock-bottom');
+  
   if (topIsYou) {
-    document.getElementById('strip-bottom').appendChild(dots);
+    document.getElementById('strip-bottom').insertBefore(dots, clockBot);
   } else {
-    document.getElementById('strip-top').appendChild(dots);
+    document.getElementById('strip-top').insertBefore(dots, clockTop);
   }
 
   document.getElementById('delta-top').textContent = '';
   document.getElementById('delta-bottom').textContent = '';
 }
 
-// ── Controls ──────────────────────────────────────────────────
 function newGame() {
   if (editMode) { exitEditMode(false); }
-
-  // Configure clock settings from UI fields
-  const tcMin = Math.max(0, parseInt(document.getElementById('tc-min').value) || 0);
-  const tcSec = Math.max(0, Math.min(59, parseInt(document.getElementById('tc-sec').value) || 0));
-  const tcInc = Math.max(0, parseInt(document.getElementById('tc-inc').value) || 0);
-  whiteTime = (tcMin * 60 + tcSec) * 1000;
-  blackTime = whiteTime;
-  timeIncrement = tcInc * 1000;
-
-  if (clockInterval) clearInterval(clockInterval);
-  clockInterval = null;
-  turnStartTime = null;
-  gameStartDateStr = "";
-  gameStartTimeStr = "";
-
+  stopClock();
+  
   game = new Chess();
   sel = null; hints = []; lastMv = null;
   aiThinking = false; pendingPromo = null;
   gameStarted = false;
+  clocks = { w: 600, b: 600 }; 
+  
   if (sf) sf.postMessage('stop');
   document.getElementById('dots').classList.remove('on');
   document.getElementById('ebar').style.width = '50%';
   document.getElementById('enum').textContent  = '0.0';
+  
+  playerColor = flipped ? 'b' : 'w';
+  
   buildBoard();
   updateHist();
   updateButtons();
-
-  if (flipped) {
-    playerColor = 'b';
-  } else {
-    playerColor = 'w';
-  }
   refreshStrips();
-  updateClockDisplays();
 
   if (sfReady) {
     updateStatus();
-    if (game.turn() !== playerColor) {
-      gameStarted = true;
-      const d = new Date();
-      gameStartDateStr = d.getFullYear() + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + String(d.getDate()).padStart(2, '0');
-      gameStartTimeStr = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
-      startClockInterval();
-      turnStartTime = Date.now();
-      setTimeout(doAI, 300);
-    }
+    if (game.turn() !== playerColor) setTimeout(doAI, 300);
   }
 }
 
 function doUndo() {
-  if (rated) return;
+  if (rated) return; 
   if (editMode) return;
   if (aiThinking) return;
   if (sf) sf.postMessage('stop');
   aiThinking = false;
   document.getElementById('dots').classList.remove('on');
+  
   game.undo();
   game.undo();
   lastMv = null;
   sel = null; hints = [];
   gameStarted = game.history().length > 0;
-
-  if (!gameStarted) {
-    if (clockInterval) clearInterval(clockInterval);
-    clockInterval = null;
-    const tcMin = Math.max(0, parseInt(document.getElementById('tc-min').value) || 0);
-    const tcSec = Math.max(0, Math.min(59, parseInt(document.getElementById('tc-sec').value) || 0));
-    whiteTime = (tcMin * 60 + tcSec) * 1000;
-    blackTime = whiteTime;
-  } else {
-    turnStartTime = Date.now();
-  }
-
+  
+  if (!gameStarted) stopClock();
+  
   render();
+  renderClocks();
   updateHist();
-  updateClockDisplays();
   updateStatus();
   updateButtons();
 }
@@ -1296,39 +1072,76 @@ function doFlip() {
   if (!gameStarted && game.history().length === 0 && !editMode) {
     playerColor = playerColor === 'w' ? 'b' : 'w';
     if (sfReady && game.turn() !== playerColor) {
-      gameStarted = true;
-      const d = new Date();
-      gameStartDateStr = d.getFullYear() + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + String(d.getDate()).padStart(2, '0');
-      gameStartTimeStr = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
-      startClockInterval();
-      turnStartTime = Date.now();
       setTimeout(doAI, 300);
     }
   }
   buildBoard();
   refreshStrips();
-  updateClockDisplays();
   updateStatus();
 }
 
 function closeOv() { document.getElementById('ov').classList.remove('on'); }
 
-// ── Rated / Unrated toggle ───────────────────────────────────────
+// ── Rated / Unrated Toggle with Multi-State Game Memory ─────────
 function setRated(val) {
-  if (editMode && val !== rated) {
-    exitEditMode(false);
-  }
+  if (rated === val) return; 
+  if (editMode) { exitEditMode(false); }
+
+  // 1. Save state of current tab configuration before leaving
+  const snapshot = {
+    fen: game.fen(),
+    historyHtml: game.history(),
+    gameStarted: gameStarted,
+    lastMv: lastMv,
+    clocks: { ...clocks },
+    playerColor: playerColor
+  };
+
+  if (rated) { ratedSaveSlot = snapshot; } 
+  else { unratedSaveSlot = snapshot; }
+
+  // 2. Change state property
   rated = val;
+  
   document.getElementById('tab-rated').classList.toggle('active', rated);
   document.getElementById('tab-rated').classList.toggle('rated', rated);
   document.getElementById('tab-unrated').classList.toggle('active', !rated);
   document.getElementById('toggle-slider').classList.toggle('right', rated);
-
   document.getElementById('evalrow').classList.toggle('hidden', rated);
+
+  // 3. Load state from targeted tab configuration
+  const targetSlot = rated ? ratedSaveSlot : unratedSaveSlot;
+
+  if (targetSlot) {
+    // Recover existing session
+    game = new Chess(targetSlot.fen);
+    gameStarted = targetSlot.gameStarted;
+    lastMv = targetSlot.lastMv;
+    clocks = { ...targetSlot.clocks };
+    playerColor = targetSlot.playerColor;
+    
+    if (sf) sf.postMessage('stop');
+    aiThinking = false;
+    document.getElementById('dots').classList.remove('on');
+    
+    buildBoard();
+    updateHist();
+    
+    if (gameStarted && !game.game_over()) { startClock(); } 
+    else { stopClock(); }
+    
+    if (!game.game_over() && game.turn() !== playerColor && sfReady) {
+      setTimeout(doAI, 300);
+    }
+  } else {
+    // Generate standard layout session clean setup
+    newGame();
+  }
+
   updateButtons();
+  updateStatus();
 }
 
-// ── Button enable/disable states ─────────────────────────────────
 function updateButtons() {
   const undoBtn = document.getElementById('btn-undo');
   undoBtn.disabled = rated || editMode;
@@ -1338,25 +1151,17 @@ function updateButtons() {
   editBtn.classList.toggle('active-edit', editMode);
 
   document.getElementById('btn-new').textContent = editMode ? 'Start Game' : 'New Game';
-
-  // Locks the time controls when edit mode is active or when a match has started
-  const tcDisabled = gameStarted || editMode;
-  document.getElementById('tc-min').disabled = tcDisabled;
-  document.getElementById('tc-sec').disabled = tcDisabled;
-  document.getElementById('tc-inc').disabled = tcDisabled;
 }
 
-// ── Edit mode ─────────────────────────────────────────────────────
+// ── Custom Setup Setup Mode (Unrated Exclusive Asset) ────────────
 function toggleEdit() {
   if (rated) return;
-  if (editMode) {
-    attemptStartFromEdit();
-  } else {
-    enterEditMode();
-  }
+  if (editMode) { attemptStartFromEdit(); } 
+  else { enterEditMode(); }
 }
 
 function enterEditMode() {
+  stopClock();
   editMode = true;
   editTool = null;
   editBoard = new Array(64).fill(null);
@@ -1406,8 +1211,7 @@ function buildPicker() {
     });
     if (color === 'b') {
       const trash = document.createElement('button');
-      trash.className = 'picker-trash';
-      trash.textContent = '🗑';
+      trash.className = 'picker-trash'; trash.textContent = '🗑';
       trash.onclick = () => selectEditTool('trash');
       row.appendChild(trash);
     }
@@ -1438,9 +1242,7 @@ function selectEditTool(tool) {
 function placeEditPiece(idx, type, color) {
   if (type === 'k') {
     const existingIdx = editBoard.findIndex(p => p && p.type === 'k' && p.color === color);
-    if (existingIdx !== -1 && existingIdx !== idx) {
-      editBoard[existingIdx] = null;
-    }
+    if (existingIdx !== -1 && existingIdx !== idx) { editBoard[existingIdx] = null; }
   }
   editBoard[idx] = { type, color };
 }
@@ -1475,11 +1277,8 @@ function editBoardToFen(turn) {
 }
 
 function onPrimaryBtn() {
-  if (editMode) {
-    attemptStartFromEdit();
-  } else {
-    newGame();
-  }
+  if (editMode) { attemptStartFromEdit(); } 
+  else { newGame(); }
 }
 
 function attemptStartFromEdit() {
@@ -1494,9 +1293,7 @@ function attemptStartFromEdit() {
   const testFen = editBoardToFen(fenTurn);
 
   let testGame;
-  try {
-    testGame = new Chess(testFen);
-  } catch(e) {
+  try { testGame = new Chess(testFen); } catch(e) {
     setStatus('Invalid position', 'danger');
     return;
   }
@@ -1512,36 +1309,20 @@ function attemptStartFromEdit() {
   game = testGame;
   lastMv = null; sel = null; hints = [];
   gameStarted = false;
-
-  const tcMin = Math.max(0, parseInt(document.getElementById('tc-min').value) || 0);
-  const tcSec = Math.max(0, Math.min(59, parseInt(document.getElementById('tc-sec').value) || 0));
-  const tcInc = Math.max(0, parseInt(document.getElementById('tc-inc').value) || 0);
-  whiteTime = (tcMin * 60 + tcSec) * 1000;
-  blackTime = whiteTime;
-  timeIncrement = tcInc * 1000;
-  if (clockInterval) clearInterval(clockInterval);
-  clockInterval = null;
-  turnStartTime = null;
-
+  clocks = { w: 600, b: 600 }; 
+  
   exitEditMode(true);
   refreshStrips();
   buildBoard();
   updateHist();
-  updateClockDisplays();
   updateStatus();
 
   if (game.turn() !== playerColor && sfReady) {
-    gameStarted = true;
-    const d = new Date();
-    gameStartDateStr = d.getFullYear() + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + String(d.getDate()).padStart(2, '0');
-    gameStartTimeStr = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
-    startClockInterval();
-    turnStartTime = Date.now();
     setTimeout(doAI, 300);
   }
 }
 
-// ── Boot ──────────────────────────────────────────────────────
+// ── Startup Context Initialize ────────────────────────────────
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
@@ -1549,7 +1330,6 @@ if ('serviceWorker' in navigator) {
 (async () => {
   buildBoard();
   refreshStrips();
-  updateClockDisplays();
   updateButtons();
   const bar = document.getElementById('lbar');
   const sub = document.getElementById('lsub');
