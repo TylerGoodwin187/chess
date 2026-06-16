@@ -290,7 +290,10 @@ body{
   <div class="pstrip" id="strip-top">
     <div class="picon b" id="icon-top">♚</div>
     <div class="pname" id="name-top">Stockfish</div>
-    <div class="prating" id="rtg-top">Elo 100</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="prating" id="rtg-top">Elo 100</div>
+        <div class="prating" id="clock-top">00:00</div>
+      </div>
     <span class="elo-delta" id="delta-top"></span>
     <div class="pdots" id="dots"><i></i><i></i><i></i></div>
   </div>
@@ -324,7 +327,10 @@ body{
   <div class="pstrip" id="strip-bottom">
     <div class="picon w" id="icon-bottom">♔</div>
     <div class="pname" id="name-bottom">You</div>
-    <div class="prating" id="rtg-bottom">Human</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="prating" id="rtg-bottom">Human</div>
+        <div class="prating" id="clock-bottom">00:00</div>
+      </div>
     <span class="elo-delta" id="delta-bottom"></span>
   </div>
 
@@ -442,6 +448,144 @@ const PIECE_TYPES = ['q','r','b','n','p'];
 
 // Custom Configuration State
 let selectedSfElo = 1400;
+
+// Multi-game state (rated + unrated)
+const games = {
+  unrated: { chess: null, engine: null, engineReady: false, engineResolve: null, remainingMs: 0, interval: null },
+  rated:  { chess: null, engine: null, engineReady: false, engineResolve: null, remainingMs: 0, interval: null }
+};
+let activeMode = 'unrated';
+
+function activeGameObj() { return games[activeMode]; }
+
+function applyModeToGlobals(mode) {
+  activeMode = mode;
+  rated = (mode === 'rated');
+  // ensure chess instance exists for mode
+  if (!games[mode].chess) games[mode].chess = new Chess();
+  game = games[mode].chess;
+  // wire engine for active mode
+  sf = games[mode].engine || null;
+  sfReady = !!games[mode].engineReady;
+  sfResolve = games[mode].engineResolve || null;
+  calculateEloBounds();
+  refreshStrips();
+  buildBoard();
+  updateHist();
+  updateStatus();
+  updateButtons();
+}
+
+function createEngineForMode(mode, elo) {
+  return new Promise((resolve, reject) => {
+    try {
+      const worker = new Worker('./stockfish.js');
+      games[mode].engine = worker;
+      games[mode].engineReady = false;
+
+      worker.onmessage = ({ data: line }) => {
+        if (typeof line !== 'string') return;
+        if (line === 'readyok') {
+          games[mode].engineReady = true;
+          if (mode === activeMode) { sfReady = true; }
+          resolve();
+        }
+        if (line.startsWith('info') && line.includes('score')) {
+          // only update visible eval for active mode and when unrated UI shows eval
+          if (mode === activeMode && !rated) {
+            const cp   = line.match(/score cp (-?\d+)/);
+            const mate = line.match(/score mate (-?\d+)/);
+            if (cp) {
+              const raw = parseInt(cp[1]) / 100;
+              updateEvalBar(game.turn() === 'w' ? raw : -raw);
+            } else if (mate) {
+              updateEvalBar(parseInt(mate[1]) > 0 ? 50 : -50);
+            }
+          }
+        }
+        if (line.startsWith('bestmove')) {
+          const parts = line.split(' ');
+          const mv = parts[1];
+          if (games[mode].engineResolve) {
+            games[mode].engineResolve(mv);
+            games[mode].engineResolve = null;
+          } else if (mode === activeMode && typeof sfResolve === 'function') {
+            sfResolve(mv);
+            sfResolve = null;
+          }
+        }
+      };
+
+      worker.onerror = (e) => reject(e);
+      worker.postMessage('uci');
+      worker.postMessage('setoption name Hash value 32');
+      // set strength if provided
+      if (typeof elo === 'number') {
+        worker.postMessage('setoption name UCI_LimitStrength value true');
+        worker.postMessage('setoption name UCI_Elo value ' + Math.min(3190, Math.max(100, elo)));
+      }
+      worker.postMessage('isready');
+    } catch (e) { reject(e); }
+  });
+}
+
+function createNewGameForMode(mode) {
+  // init chess
+  games[mode].chess = new Chess();
+  // clocks (player time) in ms
+  const mins = parseInt(document.getElementById('time-p').value) || 10;
+  games[mode].remainingMs = mins * 60 * 1000;
+  // create engine lazily
+  if (!games[mode].engine) {
+    const elo = mode === 'rated' ? getElo() : parseInt(document.getElementById('sf-elo-slider').value) || selectedSfElo;
+    createEngineForMode(mode, elo).then(() => {
+      // if creating for active mode, wire globals
+      if (mode === activeMode) { sf = games[mode].engine; sfReady = true; }
+    }).catch(e => console.error('Engine create failed', e));
+  }
+  // start the per-game clock ticking
+  startClock(mode);
+  updateClockUI(mode);
+  // if this mode is active, apply to globals and render
+  if (mode === activeMode) applyModeToGlobals(mode);
+}
+
+function startClock(mode) {
+  stopClock(mode);
+  games[mode].interval = setInterval(() => {
+    const g = games[mode].chess;
+    if (!g || g.game_over()) { stopClock(mode); return; }
+    // decrement only when it's the human player's turn
+    if (g.turn() === playerColor) {
+      games[mode].remainingMs -= 1000;
+      if (games[mode].remainingMs < 0) games[mode].remainingMs = 0;
+      updateClockUI(mode);
+      if (games[mode].remainingMs === 0) {
+        stopClock(mode);
+        // trigger game over by timeout: make engine win
+        // For simplicity, just show game over
+        if (mode === activeMode) {
+          setStatus('Time out', 'danger');
+          // mark game over by making no legal moves
+        }
+      }
+    }
+  }, 1000);
+}
+
+function stopClock(mode) {
+  if (games[mode].interval) { clearInterval(games[mode].interval); games[mode].interval = null; }
+}
+
+function updateClockUI(mode) {
+  const ms = games[mode].remainingMs || 0;
+  const mm = Math.floor(ms / 60000).toString().padStart(2, '0');
+  const ss = Math.floor((ms % 60000) / 1000).toString().padStart(2, '0');
+  const topIsYou = flipped;
+  // show player's remaining time next to their strip
+  if (topIsYou) document.getElementById('clock-top').textContent = `${mm}:${ss}`;
+  else document.getElementById('clock-bottom').textContent = `${mm}:${ss}`;
+}
 
 // ── Coordinate helpers ────────────────────────────────────────
 function idxToAlg(idx) {
@@ -1107,31 +1251,32 @@ function closeOv() {
 
 // ── Mode selection toggle event listeners ─────────────────────
 function setRated(val) {
-  rated = val;
   const s = document.getElementById('toggle-slider');
   const tu = document.getElementById('tab-unrated');
   const tr = document.getElementById('tab-rated');
   const eb = document.getElementById('evalrow');
   const link = document.getElementById('chain-link');
 
-  if (rated) {
+  if (val) {
     s.classList.add('right');
     tr.classList.add('active', 'rated');
     tu.classList.remove('active');
     eb.classList.add('hidden');
     link.classList.remove('hidden');
-    
-    // Equalize time inputs immediately when locking Rated Mode
     document.getElementById('time-sf').value = document.getElementById('time-p').value;
+    // ensure rated game exists
+    if (!games.rated.chess) createNewGameForMode('rated');
+    applyModeToGlobals('rated');
   } else {
     s.classList.remove('right');
     tu.classList.add('active');
     tr.classList.remove('active', 'rated');
     eb.classList.remove('hidden');
     link.classList.add('hidden');
+    if (!games.unrated.chess) createNewGameForMode('unrated');
+    applyModeToGlobals('unrated');
   }
   calculateEloBounds();
-  refreshStrips();
 }
 
 // ── Game Management controls ─────────────────────────────────
@@ -1149,7 +1294,14 @@ function onPrimaryBtn() {
 }
 
 function newGame() {
-  game.reset();
+  // create/reset a new game for the active mode
+  const mode = activeMode;
+  if (games[mode] && games[mode].chess) {
+    games[mode].chess.reset();
+  } else {
+    createNewGameForMode(mode);
+  }
+  // clear UI state for the active global game
   lastMv = null;
   sel = null;
   hints = [];
@@ -1326,10 +1478,15 @@ function currentEditFen() {
     lsub.textContent = 'Configuring scripts…';
     lbar.style.width = '80%';
     await loadStockfish();
+    // register the initially loaded engine as the unrated engine
+    games.unrated.engine = sf;
+    games.unrated.engineReady = sfReady;
     lbar.style.width = '100%';
     setTimeout(() => {
       document.getElementById('loading').classList.add('hide');
-      newGame();
+      // create initial unrated game and apply to UI
+      createNewGameForMode('unrated');
+      applyModeToGlobals('unrated');
     }, 200);
   } catch(e) {
     lsub.textContent = 'Load error: verify asset local structure paths.';
