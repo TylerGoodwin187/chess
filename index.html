@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Offline Chess</title>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box}
+:root{--bw:7.5ch;--board-size:min(90vw,420px)}
+body{margin:0;background:#111;color:#fff;font-family:Arial;text-align:center;min-height:100vh}
+
+#elo{padding:6px;font-size:20px}
+#engineStatus{font-size:14px;color:#aaa;padding-bottom:4px}
+#engineStatus .dots{display:inline-block;width:2.5em;text-align:left}
+
+#game{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:16px 12px 24px;gap:8px;width:100%}
+#game.hidden{display:none}
+#nameOverlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(7,8,12,.97);z-index:200;padding:20px}
+#nameOverlay.hidden{display:none}
+#nameCard{width:min(92vw,360px);background:#1c1c1c;border:1px solid #2a2a2a;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:12px;align-items:center}
+#nameCard h2{margin:0;font-size:20px}
+#nameCard p{margin:0;color:#aaa;font-size:14px}
+#nameOverlayInput,#nameSubmitBtn{width:100%;padding:10px 12px;border-radius:8px;border:1px solid #444;background:#161616;color:#fff;font-size:15px}
+#nameSubmitBtn{cursor:pointer;background:#2b6cb0;border-color:#2b6cb0}
+#boardWrap{display:flex;flex-direction:column;align-items:center;gap:6px;width:min(95vw,600px)}
+#topPlate,#bottomPlate{width:var(--board-size);display:flex;justify-content:center;max-width:min(100%,560px)}
+.nameplate{display:flex;align-items:center;gap:12px;background:#1c1c1c;border:1px solid #2a2a2a;border-radius:12px;padding:10px 14px;transition:border-color 0.2s,background 0.2s;width:var(--board-size);max-width:min(100%,560px)}
+.nameplate.active{border-color:#378add;background:#0d1f33}
+.nameplate.turn-active{border-color:#67b1ff}
+.nameplate.low .np-clock{color:#e24b4a}
+.np-avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:500;flex-shrink:0}
+.av-player{background:#0d2747;color:#378add}
+.av-sf{background:#222;border:1px solid #333;color:#666;font-size:18px}
+.np-info{flex:1;min-width:0;text-align:left}
+.np-name{font-size:15px;font-weight:500;color:#fff;margin:0 0 2px}
+.np-sub{font-size:12px;color:#555;margin:0}
+.np-clock{font-size:22px;font-weight:500;font-family:monospace;color:#eee;min-width:5ch;text-align:right}.np-clock .inc{font-size:11px;opacity:.8;margin-left:4px}
+#historyControls{display:flex;justify-content:flex-end;gap:8px;padding-bottom:8px}
+#liveBtn{background:#1c1c1c;color:#fff;border:1px solid #444;border-radius:4px;padding:6px 10px;font-size:13px;cursor:pointer}
+#liveBtn.hidden{display:none}
+.hcell{width:var(--bw);height:2em;display:flex;align-items:center;justify-content:center;font-size:13px;font-family:monospace;border:1px solid #333;border-radius:3px;cursor:pointer}
+.hcell:hover{border-color:#5b7eb8}
+.hcell.selected{box-shadow:0 0 0 2px rgba(56,138,221,.35)}
+#controls{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
+#flipBtn,#drawBtn,#resignBtn{background:#1c1c1c;color:#fff;border:1px solid #444;border-radius:4px;padding:6px 8px;font-size:13px;cursor:pointer}
+#drawBtn{border-color:#4a6a8a}
+#resignBtn{border-color:#7a3a3a;color:#e8b4b4}
+#actionBtns{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
+
+#board{width:var(--board-size);height:var(--board-size);display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);border:2px solid #2b241d;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+.square{position:relative}
+.square.premove{box-shadow:inset 0 0 0 4px rgba(56,138,221,.55)}
+.drag-ghost{position:fixed;pointer-events:none;z-index:150;object-fit:contain;transform:translateZ(0)}
+.light{background:#f3e2c2}
+.dark{background:#8c6239}
+.piece{position:absolute;inset:10%;width:80%;height:80%;object-fit:contain;transition:transform 0.18s ease,opacity 0.18s ease;transform-origin:center;pointer-events:none}
+.dot{position:absolute;width:35%;height:35%;left:32.5%;top:32.5%;pointer-events:none}
+.coord{position:absolute;font-size:10px;color:rgba(0,0,0,.45);pointer-events:none}
+.coord.file{right:3px;bottom:2px}
+.coord.rank{left:3px;top:2px}
+
+#history{
+    width:var(--board-size);
+    max-width:var(--board-size);
+    min-height:5.5em;
+    background:#1c1c1c;
+    border:1px solid #2a2a2a;
+    border-radius:6px;
+    padding:8px;
+    overflow-y:auto;
+}
+#historyGrid{width:100%;flex:1;overflow:auto;display:flex;flex-direction:column;gap:4px}
+.hrow{display:flex;flex-wrap:wrap;gap:4px;min-height:2em;align-items:center}
+#hblack{padding-left:calc(var(--bw)/2 + 2px)}
+.hwhite{color:#eee;background:#252525}
+.hblack{color:#aaa;background:#1e1e1e}
+
+#gameHistory{width:var(--board-size);max-width:var(--board-size);height:auto;max-height:var(--board-size);margin:8px auto 20px;background:#1c1c1c;border-radius:6px;padding:8px;overflow-y:auto;text-align:left}
+#gameHistory h3{margin:0 0 6px;font-size:12px;color:#555;text-transform:uppercase;letter-spacing:1px}
+#gameList .empty{color:#444;font-size:12px;padding:4px}
+.gentry{display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid #222;font-size:13px}
+.gentry:last-child{border-bottom:none}
+.gwinner{font-weight:bold;min-width:4ch}
+.gwinner.win{color:#5cb85c}
+.gwinner.loss{color:#c0392b}
+.gwinner.draw{color:#f0ad4e}
+.gelo{color:#666;font-size:12px;min-width:8ch;white-space:nowrap}
+.gmoves{color:#555;font-size:11px;font-family:monospace;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex:1;min-width:0}
+
+#endOverlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(7,8,12,.9);z-index:210;padding:20px}
+#endOverlay.hidden{display:none}
+#endCard{width:min(92vw,340px);background:#1c1c1c;border:1px solid #2a2a2a;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:14px;align-items:center}
+#endCard h2{margin:0;font-size:24px}
+#endCard p{margin:0;color:#aaa;font-size:15px}
+#endBtns{display:flex;gap:10px;width:100%}
+#newGameBtn,#reviewBtn{flex:1;padding:11px 12px;border-radius:8px;border:1px solid #444;background:#161616;color:#fff;font-size:15px;cursor:pointer}
+#newGameBtn{background:#2b6cb0;border-color:#2b6cb0}
+#reviewBtn{opacity:.6}
+#endTitle.win{color:#5cb85c}#endTitle.loss{color:#c0392b}#endTitle.draw{color:#f0ad4e}
+#toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 24px;border-radius:8px;font-size:18px;opacity:0;transition:opacity 0.4s;pointer-events:none;z-index:99}
+#toast.show{opacity:1}
+@media (max-width: 480px){
+  body{font-size:14px;-webkit-text-size-adjust:100%;}
+  :root{--board-size:min(88vw,360px)}
+  #boardWrap{width:min(88vw,360px)}
+  #playerNameInput,#flipBtn{font-size:12px;padding:6px 8px;}
+}
+</style>
+</head>
+<body>
+
+<div id="nameOverlay">
+  <div id="nameCard">
+    <h2>Choose your name</h2>
+    <p>Type any name you want and press start.</p>
+    <input id="nameOverlayInput" type="text" maxlength="20" placeholder="Your name" autocomplete="off">
+    <button id="nameSubmitBtn">Start</button>
+  </div>
+</div>
+<div id="game" class="hidden">
+  <div id="engineStatus">Stockfish <span class="dots">...</span></div>
+  <div id="boardWrap">
+    <div id="controls"></div>
+    <div id="topPlate" class="nameplate">
+      <div class="np-avatar av-sf" id="topAvatar"><i class="ti ti-cpu"></i></div>
+      <div class="np-info">
+        <p class="np-name" id="topName">Stockfish 18</p>
+        <p class="np-sub" id="topElo">Elo 100</p>
+      </div>
+      <div class="np-clock" id="topTime">10:00</div>
+    </div>
+    <div id="board"></div>
+    <div id="bottomPlate" class="nameplate">
+      <div class="np-avatar av-player" id="bottomAvatar">YOU</div>
+      <div class="np-info">
+        <p class="np-name" id="bottomName">You</p>
+        <p class="np-sub" id="bottomElo">Elo 100</p>
+      </div>
+      <div class="np-clock" id="bottomTime" contenteditable="true">10:00 + 5</div>
+    </div>
+    <div id="actionBtns">
+      <button id="drawBtn">Offer Draw</button>
+      <button id="resignBtn">Resign</button>
+      <button id="flipBtn">Flip Board</button>
+    </div>
+  </div>
+  <div id="history">
+    <div id="historyControls">
+      <button id="liveBtn" class="hidden">Live</button>
+    </div>
+    <div id="historyGrid">
+      <div class="hrow" id="hwhite"></div>
+      <div class="hrow" id="hblack"></div>
+    </div>
+  </div>
+  <div id="gameHistory">
+    <h3>Game History</h3>
+    <div id="gameList"></div>
+  </div>
+</div>
+<div id="endOverlay" class="hidden">
+  <div id="endCard">
+    <h2 id="endTitle">Game over</h2>
+    <p id="endSub"></p>
+    <div id="endBtns">
+      <button id="newGameBtn">New Game</button>
+      <button id="reviewBtn">Review</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script src="fairystockfish/chess.min.js"></script>
+<script>
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+
+const game=new Chess();
+const board=document.getElementById("board");
+const gameEl=document.getElementById("game");
+const flipBtn=document.getElementById("flipBtn");
+const nameOverlay=document.getElementById("nameOverlay");
+const overlayNameInput=document.getElementById("nameOverlayInput");
+const nameSubmitBtn=document.getElementById("nameSubmitBtn");
+
+let elo=parseInt(localStorage.getItem("elo")||"100");
+let engineReady=false;
+let selected=null;
+let playerColor=localStorage.getItem("playerColor")||"white";
+let flipped=localStorage.getItem("flipped")==="true" || playerColor==="black";
+let playerName=localStorage.getItem("playerName")||"";
+let whiteCaptures=[];
+let blackCaptures=[];
+let viewingIndex=null;
+let livePgn="";
+let liveMoves=[];
+let nameConfirmed=false;
+
+// Premove: a move queued while it's the engine's turn, auto-played when legal.
+let premove=null;
+// Drag state for pointer-based dragging (works with mouse + iOS touch).
+let dragState=null;
+// Draw-offer evaluation state.
+let evalMode=false;
+let evalScore=null;
+let gameEnded=false;
+
+// Timer state
+let playerTime=0, stockfishTime=0, increment=0;
+let timerInterval=null;
+let sfMoveStart=null;
+let timeInputActive=false;
+
+// Track whether each side has completed their first move
+// Timers only start ticking after the first move per side,
+// and no increment is awarded on that first move either.
+let playerHasMoved=false;
+let engineHasMoved=false;
+
+// ── Timer helpers ──────────────────────────────────────────────
+
+function parseClockText(text){
+  const cleaned=(text||"").trim().replace(/\s+/g," ");
+  const match=cleaned.match(/^(\d{1,2}):(\d{2})(?:\s*\+\s*(\d+))?$/);
+  if(!match) return null;
+  const minutes=parseInt(match[1],10);
+  const seconds=parseInt(match[2],10);
+  const inc=parseInt(match[3]||"0",10);
+  return {base:(minutes*60+seconds)*1000, inc:inc*1000};
+}
+
+function applyTimerSettings(reset=true){
+  const saved=localStorage.getItem("clock")||"10:00 + 5";
+  const parsed=parseClockText(saved);
+  if(parsed){
+    playerTime=parsed.base;
+    stockfishTime=parsed.base;
+    increment=parsed.inc;
+  }
+  if(reset){
+    document.getElementById("topPlate").classList.remove("active","low");
+    document.getElementById("bottomPlate").classList.remove("active","low");
+  }
+  updateTimerDisplay();
+}
+
+function initTimers(){
+  const saved=localStorage.getItem("clock")||"10:00 + 5";
+  document.getElementById("bottomTime").textContent=saved;
+  applyTimerSettings(true);
+}
+
+function formatTime(ms){
+  const s=Math.max(0,Math.ceil(ms/1000));
+  return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
+}
+
+function formatClock(ms){
+  const base=formatTime(ms);
+  const incSeconds=Math.floor(increment/1000);
+  return incSeconds>0?`${base}<span class="inc">+${incSeconds}</span>`:base;
+}
+
+function persistClockText(){
+  const value=document.getElementById("bottomTime").textContent.replace(/\s+/g," ").trim();
+  if(parseClockText(value)){
+    localStorage.setItem("clock", value);
+  }
+}
+
+function playerTurnColor(){
+  return playerColor==="white"?"w":"b";
+}
+
+function engineTurnColor(){
+  return playerColor==="white"?"b":"w";
+}
+
+function topSideColor(){
+  return flipped?"w":"b";
+}
+
+function bottomSideColor(){
+  return flipped?"b":"w";
+}
+
+function updateTimerDisplay(){
+  const topText=formatClock(topSideColor()===playerTurnColor()?playerTime:stockfishTime);
+  const bottomText=formatClock(bottomSideColor()===playerTurnColor()?playerTime:stockfishTime);
+  document.getElementById("topTime").innerHTML=topText;
+  document.getElementById("bottomTime").innerHTML=bottomText;
+}
+
+function getPlayerPlateElement(){
+  return topSideColor()===playerTurnColor()?document.getElementById("topPlate"):document.getElementById("bottomPlate");
+}
+
+function getEnginePlateElement(){
+  return topSideColor()===engineTurnColor()?document.getElementById("topPlate"):document.getElementById("bottomPlate");
+}
+
+function startTimer(who){
+  stopTimer();
+  const target=who==="player"?getPlayerPlateElement():getEnginePlateElement();
+  document.getElementById("topPlate").classList.remove("active","low");
+  document.getElementById("bottomPlate").classList.remove("active","low");
+  target.classList.add("active");
+
+  let last=Date.now();
+  timerInterval=setInterval(()=>{
+    const now=Date.now();
+    const delta=now-last;
+    last=now;
+    if(who==="player"){
+      playerTime=Math.max(0,playerTime-delta);
+      target.classList.toggle("low",playerTime<=30000);
+      updateTimerDisplay();
+      if(playerTime<=0){ stopTimer(); handleFlagged("player"); }
+    }else{
+      stockfishTime=Math.max(0,stockfishTime-delta);
+      target.classList.toggle("low",stockfishTime<=30000);
+      updateTimerDisplay();
+      if(stockfishTime<=0){ stopTimer(); handleFlagged("stockfish"); }
+    }
+  },100);
+}
+
+function stopTimer(){
+  clearInterval(timerInterval);
+  timerInterval=null;
+  document.getElementById("topPlate").classList.remove("active");
+  document.getElementById("bottomPlate").classList.remove("active");
+}
+
+function handleFlagged(who){
+  if(who==="player"){
+    elo=Math.max(100,elo-30);
+    endGame("stockfish",-30);
+  }else{
+    elo+=30;
+    endGame("me",30);
+  }
+}
+
+// ── Game history ───────────────────────────────────────────────
+
+function saveGameToHistory(winner,eloChange,eloAfter,moves){
+  const games=JSON.parse(localStorage.getItem("gameHistory")||"[]");
+  games.unshift({winner,eloChange,eloAfter,moves});
+  // Keep every game (no fixed cap). If storage ever fills up, drop the
+  // oldest games one at a time until the new list fits.
+  try{
+    localStorage.setItem("gameHistory",JSON.stringify(games));
+  }catch(e){
+    while(games.length>1){
+      games.pop();
+      try{ localStorage.setItem("gameHistory",JSON.stringify(games)); return; }catch(_){}
+    }
+  }
+}
+
+function renderGameHistory(){
+  const games=JSON.parse(localStorage.getItem("gameHistory")||"[]");
+  const list=document.getElementById("gameList");
+  list.innerHTML="";
+  if(games.length===0){
+    list.innerHTML='<div class="empty">No games yet</div>';
+    return;
+  }
+  games.forEach(g=>{
+    const div=document.createElement("div");
+    div.className="gentry";
+    const label=g.winner==="me"?"Win":g.winner==="stockfish"?"Loss":"Draw";
+    const cls=g.winner==="me"?"win":g.winner==="stockfish"?"loss":"draw";
+    const sign=g.eloChange>=0?"+":"";
+    const pairs=[];
+    for(let i=0;i<Math.min(g.moves.length,16);i+=2){
+      pairs.push((g.moves[i]||"")+" "+(g.moves[i+1]||""));
+    }
+    const preview=pairs.join("  ")+(g.moves.length>16?"...":"");
+    div.innerHTML=`<span class="gwinner ${cls}">${label}</span><span class="gelo">${sign}${g.eloChange} → ${g.eloAfter}</span><span class="gmoves">${preview}</span>`;
+    list.appendChild(div);
+  });
+}
+
+// ── ELo & state ────────────────────────────────────────────────
+
+function updateEloDisplay(){
+  document.getElementById("topElo").textContent="Elo "+elo;
+  document.getElementById("bottomElo").textContent="Elo "+elo;
+}
+
+function updateEngineElo(){
+  engine.postMessage("setoption name UCI_LimitStrength value true");
+  engine.postMessage("setoption name UCI_Elo value "+elo);
+}
+
+function saveState(){
+  localStorage.setItem("elo",elo);
+  localStorage.setItem("pgn",game.pgn());
+  localStorage.setItem("playerColor",playerColor);
+  localStorage.setItem("flipped",flipped?"true":"false");
+  localStorage.setItem("playerName",playerName);
+}
+
+function restoreState(){
+  const pgn=localStorage.getItem("pgn");
+  if(pgn){ try{ game.load_pgn(pgn); }catch(e){ game.reset(); } }
+}
+
+// After restoring a saved game, reconstruct the hasMoved flags
+// based on how many moves are in the history and whose turn it was.
+function restoreMovedFlags(){
+  const h=game.history().length;
+  if(playerColor==="white"){
+    playerHasMoved=h>=1;
+    engineHasMoved=h>=2;
+  }else{
+    engineHasMoved=h>=1;
+    playerHasMoved=h>=2;
+  }
+}
+
+function updateNames(){
+  const name=playerName.trim()||"You";
+  playerName=name;
+  localStorage.setItem("playerName",name);
+  renderPlayerCards();
+}
+
+function finishNameSetup(value){
+  const name=(value||"").trim()||"You";
+  playerName=name;
+  localStorage.setItem("playerName",playerName);
+  nameConfirmed=true;
+  nameOverlay.classList.add("hidden");
+  gameEl.classList.remove("hidden");
+  updateNames();
+  renderPlayerCards();
+  updateTurnHighlight();
+}
+
+function renderPlate(prefix,isPlayer){
+  const avatar=document.getElementById(`${prefix}Avatar`);
+  const nameEl=document.getElementById(`${prefix}Name`);
+  const eloEl=document.getElementById(`${prefix}Elo`);
+  const clockEl=document.getElementById(`${prefix}Time`);
+  avatar.className=`np-avatar ${isPlayer?"av-player":"av-sf"}`;
+  avatar.innerHTML=isPlayer?"YOU":"<i class='ti ti-cpu'></i>";
+  nameEl.textContent=isPlayer?(playerName||"You"):"Stockfish 18";
+  eloEl.textContent="Elo "+elo;
+  clockEl.innerHTML=formatClock(isPlayer?playerTime:stockfishTime);
+}
+
+function renderPlayerCards(){
+  const topIsPlayer=topSideColor()===playerTurnColor();
+  renderPlate("top",topIsPlayer);
+  renderPlate("bottom",!topIsPlayer);
+}
+
+function updateBoardLayout(){
+  gameEl.classList.toggle("swapSides", flipped);
+}
+
+function updateTurnHighlight(){
+  document.getElementById("topPlate").classList.remove("turn-active");
+  document.getElementById("bottomPlate").classList.remove("turn-active");
+  const playerPlate=document.getElementById(topSideColor()===playerTurnColor()?"topPlate":"bottomPlate");
+  const enginePlate=document.getElementById(topSideColor()===engineTurnColor()?"topPlate":"bottomPlate");
+  playerPlate.classList.toggle("turn-active", game.turn()===playerTurnColor());
+  enginePlate.classList.toggle("turn-active", game.turn()===engineTurnColor());
+}
+
+function isHumanTurn(){
+  const expectedTurn=playerColor==="white"?"w":"b";
+  return game.turn()===expectedTurn;
+}
+
+function startRound(){
+  if(!engineReady || game.game_over()) return;
+  if(!isHumanTurn()){
+    engineMove();
+  }else if(playerHasMoved){
+    // Restored mid-game on player's turn — resume their clock
+    startTimer("player");
+  }
+}
+
+function updateCapturedPieces(){
+  whiteCaptures=[];
+  blackCaptures=[];
+  game.history({verbose:true}).forEach(move=>{
+    if(!move.captured) return;
+    if(move.color==="w"){ whiteCaptures.push({type:move.captured,color:"b"}); }
+    else{ blackCaptures.push({type:move.captured,color:"w"}); }
+  });
+  renderCapturedPieces();
+}
+
+function renderCapturedPieces(){
+  // Captured-piece row removed from the UI.
+}
+
+// ── Engine ────────────────────────────────────────────────────
+
+const engine=new Worker("fairystockfish/fairystockfish.js");
+
+engine.onmessage=function(e){
+  const line=e.data;
+  console.log("ENGINE:", line);
+  // While evaluating a draw offer, capture the score and decide on bestmove.
+  if(evalMode){
+    if(line.startsWith("info")){
+      const m=line.match(/score (cp|mate) (-?\d+)/);
+      if(m) evalScore={type:m[1],val:parseInt(m[2],10)};
+    }
+    if(line.startsWith("bestmove")){
+      evalMode=false;
+      resolveDrawOffer();
+    }
+    return;
+  }
+  if(line.startsWith("uciok")){
+    engine.postMessage("setoption name UCI_LimitStrength value true");
+    engine.postMessage("setoption name UCI_Elo value "+elo);
+    engine.postMessage("isready");
+  }
+  if(line.startsWith("readyok")){
+    engineReady=true;
+    clearInterval(dotInterval);
+    document.getElementById("engineStatus").style.display="none";
+    startRound();
+  }
+  if(line.startsWith("bestmove")){
+    const mv=line.split(" ")[1];
+    if(mv==="(none)") return;
+
+    // The timer interval already counts down while Stockfish is thinking,
+    // so avoid subtracting the same elapsed time again when the move arrives.
+    sfMoveStart=null;
+
+    // Check if this is engine's first move BEFORE incrementing the flag
+    const wasEngineFirstMove=!engineHasMoved;
+    
+    // Award increment only if this is NOT engine's first move
+    if(engineHasMoved){
+      stockfishTime+=increment;
+    }
+    engineHasMoved=true;
+
+    game.move({from:mv.substring(0,2),to:mv.substring(2,4),promotion:"q"});
+    saveState();
+    updatePieces();
+    renderHistory();
+    updateCapturedPieces();
+    updateTurnHighlight();
+    updateTimerDisplay();
+    if(checkEnd()) return;
+
+    // Start player's clock after engine moves, UNLESS it's engine's first move and player is black
+    if(!(wasEngineFirstMove && playerColor==="black")){
+      startTimer("player");
+    }
+
+    // If the player queued a premove, play it now that it's their turn.
+    maybeRunPremove();
+  }
+};
+
+engine.onerror=function(e){ console.error("Engine error:",e); };
+engine.postMessage("uci");
+
+const dotsEl=document.querySelector("#engineStatus .dots");
+const dotFrames=["...","..",".",".."];
+let dotIndex=0;
+let dotInterval=setInterval(()=>{
+  dotIndex=(dotIndex+1)%dotFrames.length;
+  dotsEl.textContent=dotFrames[dotIndex];
+},400);
+
+// ── Init ──────────────────────────────────────────────────────
+
+updateEloDisplay();
+const savedName=localStorage.getItem("playerName");
+if(savedName){
+  playerName=savedName;
+  nameConfirmed=true;
+  gameEl.classList.remove("hidden");
+  nameOverlay.classList.add("hidden");
+}else{
+  nameOverlay.classList.remove("hidden");
+  overlayNameInput.focus();
+}
+updateNames();
+nameSubmitBtn.onclick=()=>finishNameSetup(overlayNameInput.value);
+overlayNameInput.addEventListener("keydown",e=>{ if(e.key==="Enter") finishNameSetup(overlayNameInput.value); });
+flipBtn.onclick=()=>{
+  flipped=!flipped;
+  localStorage.setItem("flipped",flipped?"true":"false");
+  updateBoardLayout();
+  renderPlayerCards();
+  drawBoard();
+};
+document.getElementById("drawBtn").onclick=()=>offerDraw();
+document.getElementById("resignBtn").onclick=()=>resign();
+document.getElementById("newGameBtn").onclick=()=>startNewGame();
+document.getElementById("reviewBtn").onclick=()=>toast("Review coming soon");
+document.getElementById("bottomTime").addEventListener("focus",()=>{ timeInputActive=true; });
+document.getElementById("bottomTime").addEventListener("blur",()=>{ timeInputActive=false; persistClockText(); applyTimerSettings(true); });
+document.getElementById("bottomTime").addEventListener("input",()=>{
+  const value=document.getElementById("bottomTime").textContent.trim();
+  if(parseClockText(value)) persistClockText();
+});
+if(!nameConfirmed){
+  gameEl.classList.add("hidden");
+}else{
+  gameEl.classList.remove("hidden");
+}
+updateBoardLayout();
+restoreState();
+restoreMovedFlags();
+initTimers();
+drawBoard();
+renderHistory();
+renderGameHistory();
+renderPlayerCards();
+updateCapturedPieces();
+updateTurnHighlight();
+document.getElementById("liveBtn").onclick=restoreLiveView;
+
+// ── Board drawing ────────────────────────────────────────────
+
+function drawBoard(){
+  board.innerHTML="";
+  const ranks=flipped?[1,2,3,4,5,6,7,8]:[8,7,6,5,4,3,2,1];
+  const files=flipped?["h","g","f","e","d","c","b","a"]:["a","b","c","d","e","f","g","h"];
+  for(let r=0;r<8;r++){
+    for(let c=0;c<8;c++){
+      const sq=files[c]+ranks[r];
+      const div=document.createElement("div");
+      div.className="square "+(((r+c)%2)?"dark":"light");
+      div.dataset.square=sq;
+      // Only label the board edges: files (a-h) along the bottom row,
+      // ranks (1-8) down the left column — not every single square.
+      if(r===7){
+        const fileLabel=document.createElement("span");
+        fileLabel.className="coord file";
+        fileLabel.textContent=sq[0];
+        div.appendChild(fileLabel);
+      }
+      if(c===0){
+        const rankLabel=document.createElement("span");
+        rankLabel.className="coord rank";
+        rankLabel.textContent=sq[1];
+        div.appendChild(rankLabel);
+      }
+      board.appendChild(div);
+    }
+  }
+  updatePieces();
+  renderPremove();
+}
+
+function updatePieces(){
+  document.querySelectorAll(".square").forEach(div=>{
+    const sq=div.dataset.square;
+    const p=game.get(sq);
+    const existing=div.querySelector(".piece");
+    if(p){
+      const src=`assets/pieces/${p.type}${p.color}.png`;
+      if(existing){ existing.src=src; }
+      else{
+        const img=document.createElement("img");
+        img.className="piece";
+        img.src=src;
+        div.appendChild(img);
+      }
+    }else{
+      if(existing) existing.remove();
+    }
+  });
+}
+
+function clearDots(){
+  document.querySelectorAll(".dot").forEach(x=>x.remove());
+}
+
+function showMoves(square){
+  clearDots();
+  game.moves({square,verbose:true}).forEach(m=>{
+    const t=document.querySelector(`[data-square="${m.to}"]`);
+    if(t){
+      const d=document.createElement("img");
+      d.src="assets/legalmove.png";
+      d.className="dot";
+      t.appendChild(d);
+    }
+  });
+}
+
+// ── Move history ─────────────────────────────────────────────
+
+function renderHistory(){
+  const history=viewingIndex===null?game.history():liveMoves;
+  const wRow=document.getElementById("hwhite");
+  const bRow=document.getElementById("hblack");
+  wRow.innerHTML="";
+  bRow.innerHTML="";
+  history.forEach((move,i)=>{
+    const cell=document.createElement("div");
+    cell.className="hcell "+(i%2===0?"hwhite":"hblack");
+    cell.textContent=move;
+    cell.onclick=()=>setHistoryView(i);
+    if(i===viewingIndex) cell.classList.add("selected");
+    if(i%2===0) wRow.appendChild(cell);
+    else bRow.appendChild(cell);
+  });
+  const liveBtn=document.getElementById("liveBtn");
+  liveBtn.classList.toggle("hidden",viewingIndex===null);
+  const hDiv=document.getElementById("history");
+  hDiv.scrollLeft=hDiv.scrollWidth;
+}
+
+function setHistoryView(index){
+  if(index===null) return restoreLiveView();
+  if(viewingIndex===null){
+    livePgn=game.pgn();
+    liveMoves=game.history();
+  }
+  game.reset();
+  for(let i=0;i<=index;i++) game.move(liveMoves[i]);
+  viewingIndex=index;
+  renderHistory();
+  updatePieces();
+  updateCapturedPieces();
+  updateTurnHighlight();
+  updateTimerDisplay();
+  toast(`Viewing move ${index+1}`);
+}
+
+function restoreLiveView(){
+  if(viewingIndex===null) return;
+  game.reset();
+  game.load_pgn(livePgn);
+  viewingIndex=null;
+  renderHistory();
+  updatePieces();
+  updateCapturedPieces();
+  updateTurnHighlight();
+  updateTimerDisplay();
+  toast("Back to live game");
+}
+
+// ── Click & moves ────────────────────────────────────────────
+
+function myColorChar(){ return playerColor==="white"?"w":"b"; }
+
+function clickSquare(square){
+  if(!nameConfirmed || !engineReady || viewingIndex!==null || gameEnded) return;
+  const piece=game.get(square);
+  if(selected){
+    if(square===selected){ selected=null; clearDots(); return; }
+    // Tapping another of your own pieces just reselects it.
+    if(piece && piece.color===myColorChar()){
+      selected=square; clearDots(); showMoves(square); return;
+    }
+    const from=selected; selected=null; clearDots();
+    handleMoveOrPremove(from,square);
+    return;
+  }
+  if(piece && piece.color===myColorChar()){
+    selected=square;
+    showMoves(square);
+  }
+}
+
+// Runs after a legal player move has been made on the board.
+function afterPlayerMove(){
+  selected=null;
+  clearDots();
+  // Award increment only if this is NOT the player's first move
+  if(playerHasMoved){ playerTime+=increment; }
+  playerHasMoved=true;
+  stopTimer();
+  saveState();
+  updatePieces();
+  renderHistory();
+  updateCapturedPieces();
+  updateTurnHighlight();
+  if(checkEnd()) return;
+  if(playerColor==="white" && game.history().length >= 2){
+    startTimer("stockfish");
+  }
+  setTimeout(engineMove,0);
+}
+
+// Either play the move now (if it's the player's turn) or queue it as a premove.
+function handleMoveOrPremove(from,to){
+  if(from===to) return;
+  if(isHumanTurn()){
+    const move=game.move({from,to,promotion:"q"});
+    if(move){ afterPlayerMove(); }
+  }else{
+    const p=game.get(from);
+    if(p && p.color===myColorChar()) setPremove(from,to);
+  }
+}
+
+// ── Premove ──────────────────────────────────────────────────
+
+function setPremove(from,to){
+  premove={from,to};
+  renderPremove();
+  toast("Premove set");
+}
+
+function clearPremove(){
+  premove=null;
+  renderPremove();
+}
+
+function renderPremove(){
+  document.querySelectorAll(".square.premove").forEach(s=>s.classList.remove("premove"));
+  if(!premove) return;
+  const a=document.querySelector(`[data-square="${premove.from}"]`);
+  const b=document.querySelector(`[data-square="${premove.to}"]`);
+  if(a) a.classList.add("premove");
+  if(b) b.classList.add("premove");
+}
+
+// Called once the engine has moved and it's the player's turn again.
+function maybeRunPremove(){
+  if(!premove) return;
+  const pm=premove;
+  premove=null;
+  renderPremove();
+  if(!isHumanTurn() || game.game_over()) return;
+  const move=game.move({from:pm.from,to:pm.to,promotion:"q"});
+  if(move) afterPlayerMove();
+}
+
+// ── Drag & drop (pointer events → works with mouse and iOS touch) ──
+
+function squareSize(){ return board.clientWidth/8; }
+
+board.addEventListener("pointerdown",e=>{
+  if(!nameConfirmed || !engineReady || viewingIndex!==null || gameEnded) return;
+  const sqEl=e.target.closest(".square");
+  if(!sqEl) return;
+  const sq=sqEl.dataset.square;
+  const piece=game.get(sq);
+  const canDrag=!!(piece && piece.color===myColorChar());
+  dragState={from:sq,startX:e.clientX,startY:e.clientY,moved:false,ghost:null,
+             pieceEl:sqEl.querySelector(".piece"),pointerId:e.pointerId,canDrag};
+  if(canDrag){ try{ board.setPointerCapture(e.pointerId); }catch(_){} }
+});
+
+board.addEventListener("pointermove",e=>{
+  if(!dragState || !dragState.canDrag) return;
+  const dx=e.clientX-dragState.startX, dy=e.clientY-dragState.startY;
+  if(!dragState.moved && Math.hypot(dx,dy)>6){
+    dragState.moved=true;
+    const size=squareSize();
+    const g=document.createElement("img");
+    g.className="drag-ghost";
+    g.src=dragState.pieceEl?dragState.pieceEl.src:"";
+    g.style.width=size+"px";
+    g.style.height=size+"px";
+    document.body.appendChild(g);
+    dragState.ghost=g;
+    if(dragState.pieceEl) dragState.pieceEl.style.visibility="hidden";
+    selected=null;
+    if(isHumanTurn()) showMoves(dragState.from);
+  }
+  if(dragState.moved){
+    e.preventDefault();
+    const size=squareSize();
+    dragState.ghost.style.left=(e.clientX-size/2)+"px";
+    dragState.ghost.style.top=(e.clientY-size/2)+"px";
+  }
+},{passive:false});
+
+function endDrag(e){
+  if(!dragState) return;
+  const ds=dragState; dragState=null;
+  if(ds.canDrag){ try{ board.releasePointerCapture(ds.pointerId); }catch(_){} }
+  if(ds.ghost) ds.ghost.remove();
+  if(ds.pieceEl) ds.pieceEl.style.visibility="";
+  if(ds.moved){
+    clearDots();
+    const t=document.elementFromPoint(e.clientX,e.clientY);
+    const sqEl=t && t.closest ? t.closest(".square") : null;
+    if(sqEl) handleMoveOrPremove(ds.from,sqEl.dataset.square);
+  }else{
+    // No drag happened → treat it as a click/tap.
+    clickSquare(ds.from);
+  }
+}
+board.addEventListener("pointerup",endDrag);
+board.addEventListener("pointercancel",()=>{
+  if(!dragState) return;
+  const ds=dragState; dragState=null;
+  if(ds.canDrag){ try{ board.releasePointerCapture(ds.pointerId); }catch(_){} }
+  if(ds.ghost) ds.ghost.remove();
+  if(ds.pieceEl) ds.pieceEl.style.visibility="";
+});
+
+// ── Draw offer / resign ──────────────────────────────────────
+
+function offerDraw(){
+  if(!nameConfirmed || !engineReady || gameEnded || viewingIndex!==null) return;
+  if(evalMode || game.game_over() || !isHumanTurn()) return;
+  evalMode=true;
+  evalScore=null;
+  toast("Offering a draw…");
+  engine.postMessage("position fen "+game.fen());
+  engine.postMessage("go depth 12");
+}
+
+function resolveDrawOffer(){
+  // Engine score is from the side-to-move's perspective. Convert it so that
+  // a positive number always means "good for Stockfish".
+  const stmIsEngine = game.turn()===engineTurnColor();
+  let engineScore=0;
+  if(evalScore){
+    if(evalScore.type==="mate"){
+      const stmWinning=evalScore.val>0;
+      engineScore = (stmIsEngine ? (stmWinning?100000:-100000) : (stmWinning?-100000:100000));
+    }else{
+      engineScore = stmIsEngine ? evalScore.val : -evalScore.val;
+    }
+  }
+  // If Stockfish is clearly better it plays on; otherwise it takes the draw.
+  if(engineScore>50){
+    toast("Stockfish declines the draw");
+  }else{
+    endGame("draw",0);
+  }
+}
+
+function resign(){
+  if(!nameConfirmed || gameEnded || viewingIndex!==null) return;
+  if(!confirm("Resign this game? It counts as a loss (-30 Elo).")) return;
+  stopTimer();
+  elo=Math.max(100,elo-30);
+  endGame("stockfish",-30);
+}
+
+function engineMove(){
+  if(!nameConfirmed) return;
+  updateEngineElo();
+  const variance=(Math.random()*10-5)*1000;
+  const moveTime=Math.max(100,Math.min(stockfishTime-100,Math.floor(stockfishTime/40+variance)));
+  // Only set sfMoveStart once the Stockfish clock is active.
+  if(engineHasMoved){
+    sfMoveStart=Date.now();
+  }
+  engine.postMessage("position fen "+game.fen());
+  engine.postMessage("go movetime "+moveTime);
+}
+
+// ── Game end ─────────────────────────────────────────────────
+
+function checkEnd(){
+  if(!game.game_over()) return false;
+  let winner,eloChange;
+  if(game.in_checkmate()){
+    if(game.turn()==="b"){ winner="me"; eloChange=30; }
+    else{ winner="stockfish"; eloChange=-30; }
+  }else{
+    winner="draw"; eloChange=0;
+  }
+  elo=Math.max(100,elo+eloChange);
+  endGame(winner,eloChange);
+  return true;
+}
+
+// A game has finished. Record it and show the end overlay — do NOT auto-start
+// a new game; the player chooses New Game or Review.
+function endGame(winner,eloChange){
+  stopTimer();
+  clearPremove();
+  selected=null;
+  clearDots();
+  gameEnded=true;
+  saveGameToHistory(winner,eloChange,elo,game.history());
+  localStorage.setItem("elo",elo);
+  localStorage.removeItem("pgn");
+  updateEloDisplay();
+  renderGameHistory();
+  showEndOverlay(winner,eloChange);
+}
+
+function showEndOverlay(winner,eloChange){
+  const title=document.getElementById("endTitle");
+  const sub=document.getElementById("endSub");
+  const sign=eloChange>=0?"+":"";
+  if(winner==="me"){ title.textContent="You won!"; title.className="win"; }
+  else if(winner==="stockfish"){ title.textContent="You lost"; title.className="loss"; }
+  else{ title.textContent="Draw"; title.className="draw"; }
+  sub.textContent=`${sign}${eloChange} Elo → ${elo}`;
+  document.getElementById("endOverlay").classList.remove("hidden");
+}
+
+// Start a fresh game (called from the New Game button).
+function startNewGame(){
+  document.getElementById("endOverlay").classList.add("hidden");
+  gameEnded=false;
+  premove=null;
+  selected=null;
+  playerColor=playerColor==="white"?"black":"white";
+  flipped=playerColor==="black";
+  // Reset first-move flags for the new game
+  playerHasMoved=false;
+  engineHasMoved=false;
+  localStorage.setItem("playerColor",playerColor);
+  localStorage.setItem("flipped",flipped?"true":"false");
+  updateBoardLayout();
+  updateEloDisplay();
+  updateEngineElo();
+  game.reset();
+  drawBoard();
+  renderHistory();
+  renderGameHistory();
+  updateCapturedPieces();
+  updateTurnHighlight();
+  initTimers();
+  startRound();
+}
+
+// ── Toast ────────────────────────────────────────────────────
+
+function toast(msg){
+  const el=document.getElementById("toast");
+  el.textContent=msg;
+  el.classList.add("show");
+  clearTimeout(el._t);
+  el._t=setTimeout(()=>el.classList.remove("show"),2500);
+}
+</script>
+
+</body>
+</html>
