@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Chess vs Maia</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Arial,sans-serif}
+html,body{
+margin:0;height:100%;background:#202124;color:#fff;
+overscroll-behavior-y:none;
+-webkit-text-size-adjust:100%;
+}
+body{
+padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.container{
+width:100%;
+max-width:520px;
+margin:0 auto;
+padding:12px 14px calc(24px + env(safe-area-inset-bottom));
+}
+
+.menu{display:grid;grid-template-columns:repeat(3,1fr);margin-bottom:10px;align-items:start;position:relative;z-index:5}
+.menu-item{position:relative}
+.menu-item>button{
+position:relative;z-index:3;
+width:100%;
+background:none;border:none;color:#fff;padding:12px 4px;
+font-size:clamp(13px,3.6vw,16px);cursor:pointer;-webkit-user-select:none;user-select:none;
+border-radius:8px;
+}
+.menu-item>button:active{background:#2f3136}
+.menu-item.open>button{background:#2f3136}
+.menu-item:hover>button{background:#2f3136}
+
+.settings-btn{
+width:100%;
+background:none;border:none;color:#fff;padding:12px 4px;
+font-size:clamp(13px,3.6vw,16px);cursor:pointer;-webkit-user-select:none;user-select:none;
+border-radius:8px;
+}
+.settings-btn:active{background:#2f3136}
+
+.dropdown{
+position:absolute;
+top:100%;left:0;right:0;
+display:flex;justify-content:center;
+pointer-events:none;
+z-index:1;
+}
+.menu-item.open .dropdown,
+.menu-item:hover .dropdown{pointer-events:auto}
+
+.dropdown-inner{padding-top:2px;display:flex;flex-direction:column;align-items:center;position:relative}
+
+.circle{
+position:absolute;top:0;left:50%;
+width:34px;height:34px;border-radius:50%;background:#3a3b3e;
+opacity:0;
+transform:translate(-50%,-44px) scale(.3);
+}
+.menu-item.open .circle,
+.menu-item:hover .circle{
+animation:circleDrop .3s ease forwards;
+}
+@keyframes circleDrop{
+0%{opacity:0;transform:translate(-50%,-44px) scale(.3)}
+15%{opacity:1}
+70%{opacity:1;transform:translate(-50%,0) scale(1)}
+100%{opacity:0;transform:translate(-50%,0) scale(.7)}
+}
+
+.split{
+display:flex;gap:0;margin-top:0;
+}
+.menu-item.open .split,
+.menu-item:hover .split{
+animation:splitGap .3s ease .28s forwards;
+}
+@keyframes splitGap{
+0%{gap:0}
+100%{gap:8px}
+}
+
+.split button{
+background:#3a3b3e;border:none;color:#fff;cursor:pointer;
+-webkit-user-select:none;user-select:none;
+white-space:nowrap;overflow:hidden;
+width:34px;height:34px;
+border-radius:50%;
+padding:0;
+opacity:0;
+font-size:clamp(11px,3vw,13px);
+box-shadow:0 4px 10px rgba(0,0,0,.3);
+}
+.menu-item.open .split button,
+.menu-item:hover .split button{
+animation:circleGrow .32s cubic-bezier(.34,1.3,.64,1) .28s forwards;
+}
+@keyframes circleGrow{
+0%{width:34px;height:34px;border-radius:50%;opacity:0;padding:0}
+25%{opacity:1}
+100%{width:88px;height:34px;border-radius:14px;opacity:1;padding:8px 10px}
+}
+
+.player{display:flex;justify-content:space-between;align-items:center;margin:8px 2px;font-size:clamp(15px,4.2vw,19px)}
+
+.turn-tag{
+font-weight:700;
+font-size:clamp(11px,3vw,13px);
+color:#c9a84c;
+letter-spacing:.3px;
+opacity:0;
+transition:opacity .4s ease;
+}
+.turn-tag.active{opacity:1}
+
+/* Wrapping the top player row / board / bottom player row together so
+   flipping the board can also swap which nameplate sits on top, and so the
+   game-over popup can center on the board instead of the whole screen */
+#board-wrap{display:flex;flex-direction:column;position:relative}
+#board-wrap.flipped{flex-direction:column-reverse}
+
+/* Status line above the board — sits OUTSIDE board-wrap on purpose, so
+   flipping the board never moves it. Used while Maia is loading, fades
+   away when ready / it's not your turn. */
+#status{
+text-align:center;
+margin:2px 0 10px;
+font-size:14px;
+color:#bbb;
+min-height:18px;
+transition:opacity .6s ease;
+opacity:1;
+}
+#status.status-hidden{opacity:0}
+
+/* Real board, driven by app.js */
+#board{
+display:grid;
+grid-template-columns:repeat(8,1fr);
+grid-template-rows:repeat(8,1fr);
+width:100%;
+aspect-ratio:1/1;
+margin:auto;
+border:3px solid #555;
+border-radius:4px;
+overflow:hidden;
+touch-action:none;
+}
+.square{position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:none;-webkit-user-select:none;user-select:none}
+.square.drag-hover{outline:3px solid #c9a84c;outline-offset:-3px;background-color:rgba(201,168,76,.25)}
+.drag-ghost{
+position:fixed;top:0;left:0;
+pointer-events:none;
+z-index:500;
+opacity:.95;
+filter:drop-shadow(0 6px 10px rgba(0,0,0,.5));
+}
+.square.light{background:#f0d9b5}
+.square.dark{background:#b58863}
+.square.selected{outline:3px solid #c9a84c;outline-offset:-3px}
+.square.last-move{background-color:rgba(201,168,76,.45)}
+.square.legal-target::after{
+content:"";
+position:absolute;
+width:32%;height:32%;
+border-radius:50%;
+background:rgba(255,255,255,.85);
+pointer-events:none;
+}
+.square.legal-target.has-piece::after{
+width:88%;height:88%;
+background:transparent;
+border:5px solid rgba(255,255,255,.75);
+box-sizing:border-box;
+}
+.piece{width:80%;height:80%;pointer-events:none;user-select:none}
+
+.moves{
+width:100%;margin:14px auto;border-top:1px solid #444;border-bottom:1px solid #444;
+overflow-x:auto;overflow-y:hidden;
+-webkit-overflow-scrolling:touch;
+scrollbar-width:none;
+-ms-overflow-style:none;
+}
+.moves::-webkit-scrollbar{display:none;}
+
+.inner{width:max-content;padding:8px 0;white-space:nowrap;font-size:clamp(14px,4vw,18px)}
+.movenum{color:#888;margin-right:2px}
+.move{margin-right:14px}
+
+.controls{display:flex;justify-content:center;gap:10px;margin:18px auto;flex-wrap:wrap}
+.controls button{
+flex:1 1 0;
+min-height:44px;
+background:#3a3b3e;border:none;color:#fff;font-size:clamp(14px,3.8vw,16px);
+padding:12px 10px;border-radius:22px;cursor:pointer;-webkit-user-select:none;user-select:none;
+}
+.controls button:active{background:#4c4d51}
+.hidden{display:none}
+
+.history{width:100%;margin:10px auto 0}
+.game{
+display:grid;grid-template-columns:34px 62px 1fr 1fr;
+gap:6px;padding:12px 6px;border-bottom:1px solid #444;
+font-size:clamp(11px,3.1vw,13px);
+align-items:center;
+cursor:pointer;
+}
+.game:active{background:#2f3136}
+.game .accuracy,.game .moveline{display:none}
+
+@media (min-width:400px){
+.game{grid-template-columns:44px 90px 1fr 1fr 1.4fr}
+.game .accuracy,.game .moveline{display:block}
+}
+
+/* Game-over popup — centers on the board, not the whole screen */
+.overlay{
+position:absolute;inset:0;
+background:rgba(0,0,0,.7);
+display:flex;align-items:center;justify-content:center;
+z-index:200;padding:16px;
+border-radius:4px;
+}
+.overlay.hidden{display:none}
+.overlay-card{
+background:#2b2c30;border:1px solid #444;border-radius:16px;
+padding:20px 18px;width:100%;max-width:340px;text-align:center;
+box-shadow:0 10px 30px rgba(0,0,0,.5);
+max-height:80vh;overflow-y:auto;
+}
+.overlay-title{font-size:20px;font-weight:700;margin-bottom:2px}
+.overlay-sub{font-size:13px;color:#999;margin-bottom:16px}
+.overlay-stats-columns{display:flex;gap:14px;text-align:left;margin-bottom:18px}
+.stats-col{flex:1;min-width:0}
+.stats-col-title{font-weight:700;font-size:13px;margin-bottom:6px;display:flex;justify-content:space-between;gap:6px}
+.stats-col-title .acc{color:#c9a84c;font-weight:700}
+.stat-line{display:flex;justify-content:space-between;padding:2px 0;color:#ccc;font-size:12px;gap:6px}
+.stat-line .num{font-weight:600;color:#fff}
+.overlay-buttons button{
+width:100%;min-height:44px;border:none;border-radius:22px;
+background:#c9a84c;color:#202124;font-weight:700;font-size:15px;cursor:pointer;
+-webkit-user-select:none;user-select:none;
+}
+.overlay-buttons button:active{opacity:.8}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="menu">
+<div class="menu-item" id="game-item">
+<button onclick="toggleMenu('game-item')">Game ▼</button>
+<div class="dropdown"><div class="dropdown-inner">
+<div class="circle"></div>
+<div class="split">
+<button onclick="selectMode('rated')">Rated</button>
+<button onclick="selectMode('unrated')">Unrated</button>
+</div>
+</div></div>
+</div>
+
+<button class="settings-btn">Settings</button>
+
+<div class="menu-item" id="learn-item">
+<button onclick="toggleMenu('learn-item')">Learn ▼</button>
+<div class="dropdown"><div class="dropdown-inner">
+<div class="circle"></div>
+<div class="split">
+<button onclick="enterPuzzleMode()">Puzzle</button>
+<button>Openings</button>
+</div>
+</div></div>
+</div>
+</div>
+
+<div id="status">Loading...</div>
+
+<div id="board-wrap">
+<div class="player"><span>Maia (<span id="maia-rating">250</span>)</span><span class="turn-tag" id="black-turn-tag">Black's move</span><span id="maia-clock">10:00</span></div>
+
+<div id="board"></div>
+
+<div class="player"><span>You (<span id="your-rating">250</span>)</span><span class="turn-tag" id="white-turn-tag">White's move</span><span id="your-clock">10:00</span></div>
+
+<div class="overlay hidden" id="game-over-overlay">
+<div class="overlay-card">
+<div class="overlay-title" id="overlay-title">Game Over</div>
+<div class="overlay-sub" id="overlay-sub"></div>
+<div class="overlay-stats-columns">
+<div class="stats-col">
+<div class="stats-col-title"><span>You</span><span class="acc" id="your-accuracy"></span></div>
+<div id="your-stats"></div>
+</div>
+<div class="stats-col">
+<div class="stats-col-title"><span>Maia</span><span class="acc" id="maia-accuracy"></span></div>
+<div id="maia-stats"></div>
+</div>
+</div>
+<div class="overlay-buttons">
+<button onclick="newGameCurrentMode()">New Game</button>
+</div>
+</div>
+</div>
+</div>
+
+<div class="moves">
+<div class="inner" id="move-list"></div>
+</div>
+
+<div class="controls" id="game-controls">
+<button onclick="resign()">Resign</button>
+<button>Draw</button>
+<button onclick="toggleFlip()">Flip</button>
+</div>
+
+<div class="controls hidden" id="puzzle-controls">
+<button id="puzzle-action-btn" onclick="handlePuzzleAction()">Give Up</button>
+<button onclick="toggleFlip()">Flip</button>
+</div>
+
+<div class="history" id="history">
+</div>
+</div>
+
+<script>
+function toggleMenu(id){
+var el=document.getElementById(id);
+var wasOpen=el.classList.contains('open');
+document.querySelectorAll('.menu-item.open').forEach(function(item){item.classList.remove('open');});
+if(!wasOpen){el.classList.add('open');}
+}
+document.addEventListener('click',function(e){
+if(!e.target.closest('.menu-item')){
+document.querySelectorAll('.menu-item.open').forEach(function(item){item.classList.remove('open');});
+}
+});
+</script>
+
+<script src="./chess.min.js"></script>
+<script src="./maia-tensor.js"></script>
+<script src="./maia-engine.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>
