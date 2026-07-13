@@ -16,7 +16,7 @@
 importScripts('./ort/ort.wasm.min.js')
 
 const ORT = ort
-ORT.env.wasm.wasmPaths = './ort/'
+ort.env.wasm.wasmPaths = "./ort/";
 
 // ── IndexedDB storage (mirrors MaiaModelStorage) ─────────────────────────────
 
