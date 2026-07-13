@@ -13,10 +13,10 @@
  *   { type: 'inference-result', id, logitsMove, logitsValue }
  */
 
-importScripts('ort/ort.wasm.min.js')
+importScripts('./ort/ort.wasm.min.js')
 
 const ORT = ort
-ORT.env.wasm.wasmPaths = 'ort/'
+ORT.env.wasm.wasmPaths = '/ort/'
 
 // ── IndexedDB storage (mirrors MaiaModelStorage) ─────────────────────────────
 
