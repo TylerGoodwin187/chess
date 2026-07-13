@@ -12,7 +12,7 @@ let gameTimedOut = false;
 let timedOutColor = null;
 let historyRecorded = false;
 
-const MAIA_ELO = 250; // Maia's own play strength — fixed, not tied to your outcomes
+const MAIA_ELO = localStorage.getItem("chess_my_rating"); // Maia's own play strength — tied to your outcomes
 let myRating = parseInt(localStorage.getItem("chess_my_rating") || "250", 10);
 
 function saveMyRating() {
