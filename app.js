@@ -71,8 +71,9 @@ function updateSoundButtonLabel() {
 }
 
 // Sound files expected in the project root, next to index.html:
-// move.mp3, capture.mp3, check.mp3, checkmate.mp3, draw.mp3, resign.mp3, lowtime.mp3
-const SOUND_FILES = ["move", "capture", "check", "checkmate", "draw", "resign", "lowtime"];
+// move.mp3, capture.mp3, check.mp3, checkmate.mp3, draw.mp3, lowtime.mp3
+// (no resign.mp3 — resignation uses the checkmate sound)
+const SOUND_FILES = ["move", "capture", "check", "checkmate", "draw", "lowtime"];
 const soundCache = {};
 for (const name of SOUND_FILES) {
   const audio = new Audio(`./${name}.mp3`);
@@ -85,9 +86,8 @@ function playGameSound(name) {
   const base = soundCache[name];
   if (!base) return;
   try {
-    // Clone so overlapping/rapid plays don't cut each other off
     const node = base.cloneNode();
-    node.play().catch(() => {}); // ignore autoplay-policy rejections
+    node.play().catch(() => {});
   } catch (e) {
     // Missing/broken file — fail silently rather than breaking the game
   }
@@ -97,7 +97,7 @@ function playGameSound(name) {
 // checkmate.mp3 covers checkmate AND stalemate (and timeout, handled separately).
 function soundForMove(gameObj, moveResult) {
   if (gameObj.in_checkmate() || gameObj.in_stalemate()) return "checkmate";
-  if (gameObj.in_draw()) return "draw"; // threefold / insufficient material / 50-move
+  if (gameObj.in_draw()) return "draw";
   if (gameObj.in_check()) return "check";
   if (moveResult && moveResult.captured) return "capture";
   return "move";
@@ -132,7 +132,6 @@ function clearAllSavedData() {
   localStorage.clear();
   sessionStorage.clear();
 
-  // Clear offline cached files if your PWA uses a service worker
   if ("caches" in window) {
     caches.keys().then((keys) => {
       keys.forEach((key) => caches.delete(key));
@@ -141,8 +140,8 @@ function clearAllSavedData() {
 
   location.reload();
 }
-
 window.clearAllSavedData = clearAllSavedData;
+
 const STARTING_CLOCK_SECONDS = 600;
 
 function freshStats() {
@@ -150,7 +149,7 @@ function freshStats() {
 }
 let playerMoveStats = freshStats();
 let maiaMoveStatsObj = freshStats();
-let pendingMaiaGrading = null; // { preMoveValue, color, moveNumber }
+let pendingMaiaGrading = null;
 
 let whiteTime = STARTING_CLOCK_SECONDS;
 let blackTime = STARTING_CLOCK_SECONDS;
@@ -195,8 +194,8 @@ function isGameLocked() {
 
 // ---------- Puzzle mode ----------
 
-let PUZZLES = []; // loaded from data/puzzles.json (real Lichess-sourced puzzles + a few starter mates)
-let lastPuzzleFen = null; // avoid immediately repeating the same puzzle
+let PUZZLES = [];
+let lastPuzzleFen = null;
 
 let inPuzzleMode = false;
 let puzzleGame = null;
@@ -205,8 +204,8 @@ let puzzleSolutionIndex = 0;
 let puzzlePlayerColor = "w";
 let puzzleRating = parseInt(localStorage.getItem("chess_puzzle_rating") || "400", 10);
 let puzzleAwaitingReply = false;
-let puzzleLocked = false; // true once solved or given up, until "Next" is clicked
-let puzzleMissedAlready = false; // only penalize rating once per puzzle
+let puzzleLocked = false;
+let puzzleMissedAlready = false;
 
 async function loadPuzzleData() {
   try {
@@ -222,14 +221,12 @@ async function loadPuzzleData() {
   }
 }
 
-// Picks the easiest puzzle whose rating is >= your current rating (so you always
-// progress forward through increasing difficulty), skipping the one you just did.
 function selectPuzzle() {
   let candidates = PUZZLES.filter((p) => p.rating >= puzzleRating && p.fen !== lastPuzzleFen);
   if (candidates.length === 0) candidates = PUZZLES.filter((p) => p.rating >= puzzleRating);
   if (candidates.length === 0) candidates = PUZZLES.filter((p) => p.fen !== lastPuzzleFen);
   if (candidates.length === 0) candidates = PUZZLES;
-  return candidates[0]; // already sorted ascending, so first candidate is the nearest-hardest
+  return candidates[0];
 }
 
 function savePuzzleRating() {
@@ -253,7 +250,6 @@ function loadNextPuzzle() {
   boardFlipped = puzzlePlayerColor === "b";
   document.getElementById("board-wrap").classList.toggle("flipped", boardFlipped);
 
-  // "You" shows your accumulating puzzle rating; "Maia" shows this puzzle's difficulty rating
   document.getElementById("your-rating").textContent = puzzleRating;
   document.getElementById("maia-rating").textContent = puzzle.rating;
 
@@ -323,8 +319,6 @@ function exitPuzzleMode() {
   }
 }
 
-// Recomputes lastMoveFrom/lastMoveTo from the real game's move history (used when
-// resuming a game or returning from puzzle mode, so the highlight is correct again).
 function restoreLastMoveFromRealGame() {
   const verboseHistory = game.history({ verbose: true });
   if (verboseHistory.length > 0) {
@@ -340,7 +334,6 @@ function restoreLastMoveFromRealGame() {
 function giveUpPuzzle() {
   if (!inPuzzleMode || puzzleLocked) return;
   puzzleLocked = true;
-  // Play out the remaining solution moves so they can see the answer
   const sanParts = [];
   for (let i = puzzleSolutionIndex; i < puzzleSolution.length; i++) {
     const uci = puzzleSolution[i];
@@ -399,7 +392,6 @@ async function onPuzzleSquareClick(sq) {
   const expectedUci = puzzleSolution[puzzleSolutionIndex];
 
   if (playedUci !== expectedUci) {
-    // Wrong — undo, penalize once, let them try again
     puzzleGame.load(preFen);
     renderBoard();
     if (!puzzleMissedAlready) {
@@ -412,7 +404,6 @@ async function onPuzzleSquareClick(sq) {
     return;
   }
 
-  // Correct!
   lastMoveFrom = from;
   lastMoveTo = to;
   playGameSound(soundForMove(puzzleGame, moveResult));
@@ -432,7 +423,6 @@ async function onPuzzleSquareClick(sq) {
     return;
   }
 
-  // Auto-play the opponent's scripted reply
   puzzleAwaitingReply = true;
   await humanDelay();
   const replyUci = puzzleSolution[puzzleSolutionIndex];
@@ -463,15 +453,23 @@ async function onPuzzleSquareClick(sq) {
 
 // ---------- Openings & Endgame drills ----------
 
+// Real ECO opening database (105 families, 3575 verified variations), loaded from data/openings.json
+let OPENINGS_DATA = [];
+
+async function loadOpeningsData() {
+  try {
+    const res = await fetch("./data/openings.json");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) throw new Error("Empty or invalid openings data");
+    OPENINGS_DATA = data;
+  } catch (err) {
+    console.error("Failed to load openings.json — opening drills will be unavailable:", err);
+    OPENINGS_DATA = [];
+  }
+}
+
 const DRILLS = {
-  opening: [
-    { name: "Italian Game", playerColor: "w", solution: ["e2e4","e7e5","g1f3","b8c6","f1c4"] },
-    { name: "Ruy Lopez", playerColor: "w", solution: ["e2e4","e7e5","g1f3","b8c6","f1b5"] },
-    { name: "Queen's Gambit", playerColor: "w", solution: ["d2d4","d7d5","c2c4"] },
-    { name: "Sicilian Defense", playerColor: "b", solution: ["e2e4","c7c5","g1f3","d7d6","d2d4","c5d4","f3d4","g8f6","b1c3"] },
-    { name: "French Defense", playerColor: "b", solution: ["e2e4","e7e6","d2d4","d7d5"] },
-    { name: "Caro-Kann Defense", playerColor: "b", solution: ["e2e4","c7c6","d2d4","d7d5"] },
-  ],
   endgame: [
     { name: "Rook Ladder Mate", fen: "7k/1R6/8/8/8/8/8/R3K3 w - - 0 1", playerColor: "w", solution: ["a1a8"] },
     { name: "King & Queen Mate", fen: "7k/Q4K2/8/8/8/8/8/8 w - - 0 1", playerColor: "w", solution: ["a7g7"] },
@@ -491,7 +489,7 @@ let currentDrillCategory = "opening";
 
 function openDrillPicker() {
   document.querySelectorAll(".menu-item.open").forEach((item) => item.classList.remove("open"));
-  populateDrillOptions();
+  onDrillCategoryChange();
   document.getElementById("drill-picker-overlay").classList.remove("hidden");
 }
 window.openDrillPicker = openDrillPicker;
@@ -501,24 +499,95 @@ function closeDrillPicker() {
 }
 window.closeDrillPicker = closeDrillPicker;
 
-function populateDrillOptions() {
+// Switches the picker form between "Opening" (family + variation + color) and
+// "Endgame" (a single flat drill list, fixed color per drill).
+function onDrillCategoryChange() {
   const category = document.getElementById("drill-category").value;
+  const familyLabel = document.getElementById("drill-family-label");
+  const familySelect = document.getElementById("drill-family");
+  const variationLabel = document.getElementById("drill-variation-label");
+  const colorLabel = document.getElementById("drill-color-label");
+  const colorSelect = document.getElementById("drill-color");
+
+  const isOpening = category === "opening";
+  familyLabel.classList.toggle("hidden", !isOpening);
+  familySelect.classList.toggle("hidden", !isOpening);
+  colorLabel.classList.toggle("hidden", !isOpening);
+  colorSelect.classList.toggle("hidden", !isOpening);
+  variationLabel.textContent = isOpening ? "Variation" : "Drill";
+
+  if (isOpening) {
+    populateFamilyOptions();
+  } else {
+    populateEndgameOptions();
+  }
+}
+window.onDrillCategoryChange = onDrillCategoryChange;
+
+function populateFamilyOptions() {
+  const familySelect = document.getElementById("drill-family");
+  familySelect.innerHTML = "";
+  OPENINGS_DATA.forEach((family, i) => {
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = family.name;
+    familySelect.appendChild(opt);
+  });
+  populateVariationOptions();
+}
+
+function populateVariationOptions() {
+  const familyIdx = parseInt(document.getElementById("drill-family").value, 10);
+  const family = OPENINGS_DATA[familyIdx];
   const select = document.getElementById("drill-select");
   select.innerHTML = "";
-  DRILLS[category].forEach((drill, i) => {
+  if (!family) return;
+  family.variations.forEach((variation, i) => {
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = (variation.eco ? variation.eco + " — " : "") + variation.name;
+    select.appendChild(opt);
+  });
+}
+window.populateVariationOptions = populateVariationOptions;
+
+function populateEndgameOptions() {
+  const select = document.getElementById("drill-select");
+  select.innerHTML = "";
+  DRILLS.endgame.forEach((drill, i) => {
     const opt = document.createElement("option");
     opt.value = i;
     opt.textContent = drill.name;
     select.appendChild(opt);
   });
 }
-window.populateDrillOptions = populateDrillOptions;
 
 function startSelectedDrill() {
   const category = document.getElementById("drill-category").value;
-  const idx = parseInt(document.getElementById("drill-select").value, 10);
-  const drill = DRILLS[category][idx];
-  currentDrillCategory = category;
+
+  if (category === "endgame") {
+    const idx = parseInt(document.getElementById("drill-select").value, 10);
+    const drill = DRILLS.endgame[idx];
+    currentDrillCategory = "endgame";
+    closeDrillPicker();
+    loadDrill(drill);
+    return;
+  }
+
+  const familyIdx = parseInt(document.getElementById("drill-family").value, 10);
+  const variationIdx = parseInt(document.getElementById("drill-select").value, 10);
+  const color = document.getElementById("drill-color").value;
+  const family = OPENINGS_DATA[familyIdx];
+  if (!family) return;
+  const variation = family.variations[variationIdx];
+  if (!variation) return;
+
+  const drill = {
+    name: family.name + " — " + variation.name,
+    playerColor: color,
+    solution: variation.solution,
+  };
+  currentDrillCategory = "opening";
   closeDrillPicker();
   loadDrill(drill);
 }
@@ -547,7 +616,6 @@ function loadDrill(drill) {
   lastMoveFrom = null;
   lastMoveTo = null;
 
-  // Auto-play any leading moves that belong to the opponent before it's your turn
   while (drillSolutionIndex < drillSolution.length && drillGame.turn() !== drillPlayerColor) {
     const uci = drillSolution[drillSolutionIndex];
     const from = uci.slice(0, 2), to = uci.slice(2, 4);
@@ -725,7 +793,7 @@ function updateClockUnlocks() {
   if (len >= 3) blackClockStarted = true;
 }
 
-const LOWTIME_THRESHOLDS = [60, 10, 3]; // seconds: 1:00, 0:10, 0:03
+const LOWTIME_THRESHOLDS = [60, 10, 3];
 
 function tickClock() {
   if (inPuzzleMode || inDrillMode || isGameLocked()) return;
@@ -740,7 +808,6 @@ function tickClock() {
     if (blackTime === 0) return handleTimeout("b");
   }
 
-  // Only warn about YOUR clock running low, not Maia's
   if (turn === playerColor) {
     const yourTime = playerColor === "w" ? whiteTime : blackTime;
     if (LOWTIME_THRESHOLDS.includes(yourTime)) playGameSound("lowtime");
@@ -755,7 +822,7 @@ function handleTimeout(loserColor) {
   gameTimedOut = true;
   timedOutColor = loserColor;
   maiaThinking = false;
-  playGameSound("checkmate"); // per request: checkmate sound covers checkmate, stalemate, and timeout
+  playGameSound("checkmate");
   updateClockDisplays();
   saveCurrentGame();
   clearTurnTags();
@@ -915,7 +982,6 @@ function resign() {
   gameResigned = true;
   resignedBy = playerColor;
   maiaThinking = false;
-  playGameSound("resign");
   saveCurrentGame();
   statusEl.classList.add("status-hidden");
   clearTurnTags();
@@ -929,7 +995,7 @@ function pieceImage(piece) {
   return `./${piece.type}${piece.color}.png`;
 }
 
-let draggingSquare = null; // square whose piece is currently being visually dragged
+let draggingSquare = null;
 
 function renderBoard() {
   const activeGame = inPuzzleMode ? puzzleGame : (inDrillMode ? drillGame : game);
@@ -978,11 +1044,11 @@ function onBoardClick(sq) {
   return onSquareClick(sq);
 }
 
-// ---------- Drag to move (touch-first, works with mouse too via Pointer Events) ----------
+// ---------- Drag to move ----------
 
-const DRAG_THRESHOLD_PX = 8; // how far the finger must move before it counts as a drag, not a tap
+const DRAG_THRESHOLD_PX = 8;
 
-let pointerTrack = null; // { pointerId, startSq, startX, startY, isDraggable, dragging }
+let pointerTrack = null;
 let ghostEl = null;
 let dragHoverSq = null;
 
@@ -1069,10 +1135,9 @@ document.addEventListener("pointermove", (e) => {
   const dy = e.clientY - pointerTrack.startY;
 
   if (!pointerTrack.dragging) {
-    if (!pointerTrack.isDraggable) return; // plain tap tracking only, no visuals
+    if (!pointerTrack.isDraggable) return;
     if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
 
-    // Drag begins now
     pointerTrack.dragging = true;
     draggingSquare = pointerTrack.startSq;
     selectedSquare = pointerTrack.startSq;
@@ -1097,12 +1162,11 @@ function endPointerTrack(e) {
     const dropSq = squareFromPoint(e.clientX, e.clientY);
 
     if (!dropSq || dropSq === track.startSq) {
-      renderBoard(); // just re-render at rest; selectedSquare stays set (matches tap-to-select behavior)
+      renderBoard();
     } else {
-      onBoardClick(dropSq); // selectedSquare is already track.startSq, so this attempts the move
+      onBoardClick(dropSq);
     }
   } else {
-    // Pure tap
     onBoardClick(track.startSq);
   }
 }
@@ -1117,7 +1181,7 @@ document.addEventListener("pointercancel", (e) => {
   renderBoard();
 });
 
-// ---------- Real move list (proper SAN, White-Black-White-Black copy order) ----------
+// ---------- Real move list ----------
 
 function renderMoveList() {
   const activeGame = inPuzzleMode ? puzzleGame : (inDrillMode ? drillGame : game);
@@ -1390,7 +1454,7 @@ function buildStatsList(container, stats) {
   container.innerHTML = "";
   for (const [key, label] of STAT_LABELS) {
     const count = stats[key];
-    if (count === 0) continue; // only show categories that actually occurred
+    if (count === 0) continue;
     const row = document.createElement("div");
     row.className = "stat-line";
     row.innerHTML = `<span>${label}</span><span class="num">${count}</span>`;
@@ -1430,8 +1494,6 @@ function pushHistoryEntry() {
     resultLabel = "0";
   }
 
-  // Only RATED games actually move your real rating — unrated games still show
-  // a +30/-30/0 result for reference, but it's cosmetic there.
   if (currentMode === "rated") {
     if (resultLabel === "+30") myRating += 30;
     else if (resultLabel === "-30") myRating = Math.max(100, myRating - 30);
@@ -1442,7 +1504,6 @@ function pushHistoryEntry() {
   const sanMoves = game.history();
   const moveline = sanMoves.slice(0, 6).join(" ") + (sanMoves.length > 6 ? "..." : "");
 
-  // "Best Moves" combines every non-negative category (brilliant/great/book/best/excellent/good)
   const yourBest = POSITIVE_KEYS.reduce((sum, key) => sum + playerMoveStats[key], 0);
   const maiaBest = POSITIVE_KEYS.reduce((sum, key) => sum + maiaMoveStatsObj[key], 0);
 
@@ -1462,7 +1523,6 @@ function pushHistoryEntry() {
     maiaMistakes: maiaMoveStatsObj.mistake,
     yourBlunders: playerMoveStats.blunder,
     maiaBlunders: maiaMoveStatsObj.blunder,
-    // kept for backwards compatibility with anything still reading the old combined string
     accuracy: (yourAcc === null ? "—" : yourAcc + "%") + " / " + (maiaAcc === null ? "—" : maiaAcc + "%"),
     you: username + myRating,
     maia: "Maia" + MAIA_ELO,
@@ -1488,7 +1548,6 @@ function renderHistory() {
     card.className = "history-card";
     card.type = "button";
 
-    // Fall back gracefully for entries saved before this richer format existed
     const yourName = entry.yourName ?? "Me";
     const yourElo = entry.yourElo ?? "—";
     const maiaElo = entry.maiaElo ?? "—";
@@ -1568,8 +1627,6 @@ async function init() {
   updateSoundButtonLabel();
   updateDefaultModeButtonLabel();
 
-  // Render a board immediately with whatever's saved, so a later failure
-  // (engine, puzzles, etc.) never leaves the page looking blank.
   try {
     const loaded = loadGame(currentMode);
     applyLoadedState(loaded);
@@ -1583,6 +1640,7 @@ async function init() {
   try {
     await MaiaTensor.initMoveTables("./data/");
     await loadPuzzleData();
+    await loadOpeningsData();
 
     engine = new MaiaEngine({
       onStatus: (s) => {
@@ -1596,7 +1654,6 @@ async function init() {
 
     setInterval(tickClock, 1000);
 
-    // On a brand-new session with no prior game saved, respect "Default Game Mode = Puzzles"
     if (!hadPriorSession && defaultMode === "puzzles") {
       enterPuzzleMode();
     } else if (isGameLocked()) {
