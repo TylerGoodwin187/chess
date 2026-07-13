@@ -384,12 +384,19 @@ font-size:15px;padding:8px 10px;
 <div class="overlay-sub">Pick a category, then a drill to practice.</div>
 <div class="drill-picker-form">
 <label class="drill-label">Category</label>
-<select id="drill-category" class="drill-select" onchange="populateDrillOptions()">
+<select id="drill-category" class="drill-select" onchange="onDrillCategoryChange()">
 <option value="opening">Opening</option>
 <option value="endgame">Endgame</option>
 </select>
-<label class="drill-label">Drill</label>
+<label class="drill-label" id="drill-family-label">Opening Family</label>
+<select id="drill-family" class="drill-select" onchange="populateVariationOptions()"></select>
+<label class="drill-label" id="drill-variation-label">Variation</label>
 <select id="drill-select" class="drill-select"></select>
+<label class="drill-label" id="drill-color-label">Play As</label>
+<select id="drill-color" class="drill-select">
+<option value="w">White</option>
+<option value="b">Black</option>
+</select>
 </div>
 <div class="overlay-buttons drill-picker-buttons">
 <button onclick="closeDrillPicker()" class="secondary">Cancel</button>
