@@ -37,13 +37,7 @@ border-radius:8px;
 .menu-item.open>button{background:#2f3136}
 .menu-item:hover>button{background:#2f3136}
 
-.settings-btn{
-width:100%;
-background:none;border:none;color:#fff;padding:12px 4px;
-font-size:clamp(13px,3.6vw,16px);cursor:pointer;-webkit-user-select:none;user-select:none;
-border-radius:8px;
-}
-.settings-btn:active{background:#2f3136}
+
 
 .dropdown{
 position:absolute;
@@ -107,6 +101,34 @@ animation:circleGrow .32s cubic-bezier(.34,1.3,.64,1) .28s forwards;
 100%{width:88px;height:34px;border-radius:14px;opacity:1;padding:8px 10px}
 }
 
+/* Settings: instead of splitting sideways, the ball drops then each button
+   pops open one after another going straight down */
+.vstack{display:flex;flex-direction:column;gap:6px;align-items:center;margin-top:0}
+.vstack button{
+background:#3a3b3e;border:none;color:#fff;cursor:pointer;
+-webkit-user-select:none;user-select:none;
+white-space:nowrap;overflow:hidden;
+width:34px;height:34px;
+border-radius:50%;
+padding:0;
+opacity:0;
+font-size:clamp(10.5px,2.8vw,12px);
+box-shadow:0 4px 10px rgba(0,0,0,.3);
+}
+.menu-item.open .vstack button,
+.menu-item:hover .vstack button{
+animation:vstackGrow .3s cubic-bezier(.34,1.3,.64,1) forwards;
+}
+@keyframes vstackGrow{
+0%{width:34px;height:34px;border-radius:50%;opacity:0;padding:0}
+25%{opacity:1}
+100%{width:150px;height:34px;border-radius:14px;opacity:1;padding:8px 10px}
+}
+.vstack button:nth-child(1){animation-delay:.28s}
+.vstack button:nth-child(2){animation-delay:.5s}
+.vstack button:nth-child(3){animation-delay:.72s}
+.vstack button:nth-child(4){animation-delay:.94s}
+
 .player{display:flex;justify-content:space-between;align-items:center;margin:8px 2px;font-size:clamp(15px,4.2vw,19px)}
 
 .turn-tag{
@@ -128,6 +150,15 @@ transition:opacity .4s ease;
 /* Status line above the board — sits OUTSIDE board-wrap on purpose, so
    flipping the board never moves it. Used while Maia is loading, fades
    away when ready / it's not your turn. */
+#mode-badge{
+text-align:center;
+font-size:11px;
+font-weight:700;
+letter-spacing:.5px;
+text-transform:uppercase;
+color:#c9a84c;
+margin-top:2px;
+}
 #status{
 text-align:center;
 margin:2px 0 10px;
@@ -204,20 +235,55 @@ padding:12px 10px;border-radius:22px;cursor:pointer;-webkit-user-select:none;use
 .controls button:active{background:#4c4d51}
 .hidden{display:none}
 
-.history{width:100%;margin:10px auto 0}
-.game{
-display:grid;grid-template-columns:34px 62px 1fr 1fr;
-gap:6px;padding:12px 6px;border-bottom:1px solid #444;
-font-size:clamp(11px,3.1vw,13px);
-align-items:center;
-cursor:pointer;
+/* Game history: a 4-column grid of button-cards, same width as the controls
+   row above it, growing downward as far as needed — the page scrolls, not a box */
+.history{
+width:100%;margin:10px auto 0;
+display:grid;
+grid-template-columns:repeat(4,1fr);
+gap:6px;
 }
-.game:active{background:#2f3136}
-.game .accuracy,.game .moveline{display:none}
+.history-empty{
+grid-column:1/-1;
+padding:16px 6px;color:#888;font-size:13px;text-align:center;
+}
+.history-card{
+background:#2d2d2d;border:1px solid #4a4a4a;border-radius:10px;
+padding:6px 4px 5px;
+color:#fff;
+font-family:inherit;
+cursor:pointer;
+display:flex;flex-direction:column;
+gap:3px;
+text-align:center;
+-webkit-user-select:none;user-select:none;
+}
+.history-card:active{background:#353638}
 
-@media (min-width:400px){
-.game{grid-template-columns:44px 90px 1fr 1fr 1.4fr}
-.game .accuracy,.game .moveline{display:block}
+.hc-head{display:flex;justify-content:space-between;align-items:baseline;padding:0 2px}
+.hc-result{font-size:clamp(10px,2.6vw,12px);font-weight:700}
+.hc-mode{font-size:clamp(6.5px,1.7vw,8px);color:#999;text-transform:uppercase;letter-spacing:.3px}
+
+.hc-top{display:flex;position:relative}
+.hc-player{flex:1;min-width:0}
+.hc-player h4{font-size:clamp(8.5px,2.2vw,10px);font-weight:700;margin-bottom:2px;color:#ddd}
+.hc-stat{font-size:clamp(7px,1.9vw,9px);line-height:1.35;color:#ccc}
+.hc-divider{
+position:absolute;left:50%;top:2px;bottom:2px;width:1px;
+transform:translateX(-50%);
+background:linear-gradient(to bottom, rgba(255,255,255,.05), rgba(255,255,255,.35) 15%, rgba(255,255,255,.35) 85%, rgba(255,255,255,.05));
+}
+
+.hc-moves{
+font-family:Consolas,"Courier New",monospace;
+font-size:clamp(6.5px,1.8vw,8.5px);
+color:#aaa;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+border-top:1px solid #444;padding-top:4px;margin-top:1px;
+}
+
+@media (max-width:360px){
+.history{grid-template-columns:repeat(2,1fr)}
 }
 
 /* Game-over popup — centers on the board, not the whole screen */
@@ -249,6 +315,18 @@ background:#c9a84c;color:#202124;font-weight:700;font-size:15px;cursor:pointer;
 -webkit-user-select:none;user-select:none;
 }
 .overlay-buttons button:active{opacity:.8}
+
+.drill-picker-form{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;text-align:left}
+.drill-label{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:.4px;margin-top:6px}
+.drill-select{
+width:100%;min-height:44px;
+background:#3a3b3e;color:#fff;border:1px solid #555;border-radius:10px;
+font-size:15px;padding:8px 10px;
+-webkit-appearance:none;appearance:none;
+}
+.drill-picker-buttons{display:flex;gap:10px}
+.drill-picker-buttons button{flex:1}
+.drill-picker-buttons button.secondary{background:#3a3b3e;color:#fff}
 </style>
 </head>
 <body>
@@ -265,7 +343,18 @@ background:#c9a84c;color:#202124;font-weight:700;font-size:15px;cursor:pointer;
 </div></div>
 </div>
 
-<button class="settings-btn">Settings</button>
+<div class="menu-item" id="settings-item">
+<button onclick="toggleMenu('settings-item')">Settings</button>
+<div class="dropdown"><div class="dropdown-inner">
+<div class="circle"></div>
+<div class="vstack">
+<button id="settings-username-btn" onclick="setUsername()">Username: You</button>
+<button id="settings-sound-btn" onclick="toggleSound()">Sound: On</button>
+<button id="settings-defaultmode-btn" onclick="cycleDefaultMode()">Default: Unranked</button>
+<button onclick="clearAllSavedData()">Clear Saved Games</button>
+</div>
+</div></div>
+</div>
 
 <div class="menu-item" id="learn-item">
 <button onclick="toggleMenu('learn-item')">Learn ▼</button>
@@ -273,12 +362,13 @@ background:#c9a84c;color:#202124;font-weight:700;font-size:15px;cursor:pointer;
 <div class="circle"></div>
 <div class="split">
 <button onclick="enterPuzzleMode()">Puzzle</button>
-<button>Openings</button>
+<button onclick="openDrillPicker()">Openings/Endgames</button>
 </div>
 </div></div>
 </div>
 </div>
 
+<div id="mode-badge">Unrated</div>
 <div id="status">Loading...</div>
 
 <div id="board-wrap">
@@ -286,7 +376,27 @@ background:#c9a84c;color:#202124;font-weight:700;font-size:15px;cursor:pointer;
 
 <div id="board"></div>
 
-<div class="player"><span>You (<span id="your-rating">250</span>)</span><span class="turn-tag" id="white-turn-tag">White's move</span><span id="your-clock">10:00</span></div>
+<div class="player"><span><span id="your-name-label">You</span> (<span id="your-rating">250</span>)</span><span class="turn-tag" id="white-turn-tag">White's move</span><span id="your-clock">10:00</span></div>
+
+<div class="overlay hidden" id="drill-picker-overlay">
+<div class="overlay-card">
+<div class="overlay-title">Openings &amp; Endgames</div>
+<div class="overlay-sub">Pick a category, then a drill to practice.</div>
+<div class="drill-picker-form">
+<label class="drill-label">Category</label>
+<select id="drill-category" class="drill-select" onchange="populateDrillOptions()">
+<option value="opening">Opening</option>
+<option value="endgame">Endgame</option>
+</select>
+<label class="drill-label">Drill</label>
+<select id="drill-select" class="drill-select"></select>
+</div>
+<div class="overlay-buttons drill-picker-buttons">
+<button onclick="closeDrillPicker()" class="secondary">Cancel</button>
+<button onclick="startSelectedDrill()">Start Drill</button>
+</div>
+</div>
+</div>
 
 <div class="overlay hidden" id="game-over-overlay">
 <div class="overlay-card">
@@ -321,6 +431,12 @@ background:#c9a84c;color:#202124;font-weight:700;font-size:15px;cursor:pointer;
 
 <div class="controls hidden" id="puzzle-controls">
 <button id="puzzle-action-btn" onclick="handlePuzzleAction()">Give Up</button>
+<button onclick="toggleFlip()">Flip</button>
+</div>
+
+<div class="controls hidden" id="drill-controls">
+<button onclick="exitDrillMode()">Exit Drill</button>
+<button id="drill-restart-btn" onclick="restartCurrentDrill()">Restart</button>
 <button onclick="toggleFlip()">Flip</button>
 </div>
 
