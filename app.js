@@ -12,8 +12,121 @@ let gameTimedOut = false;
 let timedOutColor = null;
 let historyRecorded = false;
 
-const MY_ELO = 250;
-const MAIA_ELO = 250;
+const MAIA_ELO = 250; // Maia's own play strength — fixed, not tied to your outcomes
+let myRating = parseInt(localStorage.getItem("chess_my_rating") || "250", 10);
+
+function saveMyRating() {
+  localStorage.setItem("chess_my_rating", String(myRating));
+}
+
+// ---------- Settings ----------
+let username = localStorage.getItem("chess_username") || "You";
+let soundEnabled = localStorage.getItem("chess_sound_enabled") !== "false"; // default on
+let defaultMode = localStorage.getItem("chess_default_mode") || "unranked"; // "unranked" | "ranked" | "puzzles"
+const hadPriorSession = !!localStorage.getItem("chess_active_mode"); // used once at startup below
+
+function updateModeBadge() {
+  const el = document.getElementById("mode-badge");
+  if (!el) return;
+  if (inPuzzleMode) {
+    el.textContent = "Learn";
+  } else if (inDrillMode) {
+    el.textContent = currentDrillCategory === "endgame" ? "Endgame" : "Opening";
+  } else {
+    el.textContent = currentMode === "rated" ? "Rated" : "Unrated";
+  }
+}
+
+// --- Username ---
+function setUsername() {
+  document.querySelectorAll(".menu-item.open").forEach((item) => item.classList.remove("open"));
+  const input = prompt("Enter your display name:", username);
+  if (input && input.trim()) {
+    username = input.trim().slice(0, 16);
+    localStorage.setItem("chess_username", username);
+    updateUsernameDisplay();
+  }
+}
+window.setUsername = setUsername;
+
+function updateUsernameDisplay() {
+  const nameEl = document.getElementById("your-name-label");
+  if (nameEl) nameEl.textContent = username;
+  const btn = document.getElementById("settings-username-btn");
+  if (btn) btn.textContent = "Username: " + username;
+}
+
+// --- Sound ---
+function toggleSound() {
+  document.querySelectorAll(".menu-item.open").forEach((item) => item.classList.remove("open"));
+  soundEnabled = !soundEnabled;
+  localStorage.setItem("chess_sound_enabled", String(soundEnabled));
+  updateSoundButtonLabel();
+}
+window.toggleSound = toggleSound;
+
+function updateSoundButtonLabel() {
+  const btn = document.getElementById("settings-sound-btn");
+  if (btn) btn.textContent = "Sound: " + (soundEnabled ? "On" : "Off");
+}
+
+// Sound files expected in the project root, next to index.html:
+// move.mp3, capture.mp3, check.mp3, checkmate.mp3, draw.mp3, resign.mp3, lowtime.mp3
+const SOUND_FILES = ["move", "capture", "check", "checkmate", "draw", "resign", "lowtime"];
+const soundCache = {};
+for (const name of SOUND_FILES) {
+  const audio = new Audio(`./${name}.mp3`);
+  audio.preload = "auto";
+  soundCache[name] = audio;
+}
+
+function playGameSound(name) {
+  if (!soundEnabled) return;
+  const base = soundCache[name];
+  if (!base) return;
+  try {
+    // Clone so overlapping/rapid plays don't cut each other off
+    const node = base.cloneNode();
+    node.play().catch(() => {}); // ignore autoplay-policy rejections
+  } catch (e) {
+    // Missing/broken file — fail silently rather than breaking the game
+  }
+}
+
+// Decides which sound a just-made move should play, in priority order.
+// checkmate.mp3 covers checkmate AND stalemate (and timeout, handled separately).
+function soundForMove(gameObj, moveResult) {
+  if (gameObj.in_checkmate() || gameObj.in_stalemate()) return "checkmate";
+  if (gameObj.in_draw()) return "draw"; // threefold / insufficient material / 50-move
+  if (gameObj.in_check()) return "check";
+  if (moveResult && moveResult.captured) return "capture";
+  return "move";
+}
+
+// --- Default game mode ---
+const DEFAULT_MODE_ORDER = ["unranked", "ranked", "puzzles"];
+function cycleDefaultMode() {
+  document.querySelectorAll(".menu-item.open").forEach((item) => item.classList.remove("open"));
+  const idx = DEFAULT_MODE_ORDER.indexOf(defaultMode);
+  defaultMode = DEFAULT_MODE_ORDER[(idx + 1) % DEFAULT_MODE_ORDER.length];
+  localStorage.setItem("chess_default_mode", defaultMode);
+  updateDefaultModeButtonLabel();
+}
+window.cycleDefaultMode = cycleDefaultMode;
+
+function updateDefaultModeButtonLabel() {
+  const btn = document.getElementById("settings-defaultmode-btn");
+  if (btn) btn.textContent = "Default: " + defaultMode.charAt(0).toUpperCase() + defaultMode.slice(1);
+}
+
+// --- Clear saved data ---
+function clearAllSavedData() {
+  document.querySelectorAll(".menu-item.open").forEach((item) => item.classList.remove("open"));
+  if (!confirm("Clear all saved games, history, and ratings? This can't be undone.")) return;
+  localStorage.clear();
+  location.reload();
+}
+window.clearAllSavedData = clearAllSavedData;
 const STARTING_CLOCK_SECONDS = 600;
 
 function freshStats() {
@@ -33,7 +146,7 @@ function humanDelay() {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-let currentMode = localStorage.getItem("chess_active_mode") || "unrated";
+let currentMode = localStorage.getItem("chess_active_mode") || (defaultMode === "ranked" ? "rated" : "unrated");
 let gameToken = 0;
 
 const boardEl = document.getElementById("board");
@@ -154,12 +267,17 @@ window.handlePuzzleAction = handlePuzzleAction;
 function enterPuzzleMode() {
   document.querySelectorAll(".menu-item.open").forEach((item) => item.classList.remove("open"));
   if (maiaThinking) return;
+  if (inDrillMode) {
+    inDrillMode = false;
+    document.getElementById("drill-controls").classList.add("hidden");
+  }
   if (PUZZLES.length === 0) {
     statusEl.textContent = "Puzzles failed to load — check that data/puzzles.json exists next to index.html.";
     statusEl.classList.remove("status-hidden");
     return;
   }
   inPuzzleMode = true;
+  updateModeBadge();
   gameControlsEl.classList.add("hidden");
   puzzleControlsEl.classList.remove("hidden");
   loadNextPuzzle();
@@ -168,13 +286,14 @@ window.enterPuzzleMode = enterPuzzleMode;
 
 function exitPuzzleMode() {
   inPuzzleMode = false;
+  updateModeBadge();
   puzzleControlsEl.classList.add("hidden");
   gameControlsEl.classList.remove("hidden");
   selectedSquare = null;
   boardFlipped = playerColor === "b";
   document.getElementById("board-wrap").classList.toggle("flipped", boardFlipped);
 
-  document.getElementById("your-rating").textContent = MY_ELO;
+  document.getElementById("your-rating").textContent = myRating;
   document.getElementById("maia-rating").textContent = MAIA_ELO;
   restoreLastMoveFromRealGame();
 
@@ -216,6 +335,7 @@ function giveUpPuzzle() {
       sanParts.push(mv.san);
       lastMoveFrom = from;
       lastMoveTo = to;
+      playGameSound(soundForMove(puzzleGame, mv));
     }
   }
   renderBoard();
@@ -279,6 +399,7 @@ async function onPuzzleSquareClick(sq) {
   // Correct!
   lastMoveFrom = from;
   lastMoveTo = to;
+  playGameSound(soundForMove(puzzleGame, moveResult));
   renderBoard();
   renderMoveList();
   puzzleSolutionIndex++;
@@ -301,9 +422,10 @@ async function onPuzzleSquareClick(sq) {
   const replyUci = puzzleSolution[puzzleSolutionIndex];
   const rFrom = replyUci.slice(0, 2), rTo = replyUci.slice(2, 4);
   const rPromo = replyUci.length > 4 ? replyUci.slice(4) : "q";
-  puzzleGame.move({ from: rFrom, to: rTo, promotion: rPromo });
+  const replyResult = puzzleGame.move({ from: rFrom, to: rTo, promotion: rPromo });
   lastMoveFrom = rFrom;
   lastMoveTo = rTo;
+  playGameSound(soundForMove(puzzleGame, replyResult));
   puzzleSolutionIndex++;
   renderBoard();
   renderMoveList();
@@ -320,6 +442,214 @@ async function onPuzzleSquareClick(sq) {
     updatePuzzleActionButton();
   } else {
     statusEl.textContent = `Puzzle Rating ${puzzleRating} — find the best move.`;
+  }
+}
+
+// ---------- Openings & Endgame drills ----------
+
+const DRILLS = {
+  opening: [
+    { name: "Italian Game", playerColor: "w", solution: ["e2e4","e7e5","g1f3","b8c6","f1c4"] },
+    { name: "Ruy Lopez", playerColor: "w", solution: ["e2e4","e7e5","g1f3","b8c6","f1b5"] },
+    { name: "Queen's Gambit", playerColor: "w", solution: ["d2d4","d7d5","c2c4"] },
+    { name: "Sicilian Defense", playerColor: "b", solution: ["e2e4","c7c5","g1f3","d7d6","d2d4","c5d4","f3d4","g8f6","b1c3"] },
+    { name: "French Defense", playerColor: "b", solution: ["e2e4","e7e6","d2d4","d7d5"] },
+    { name: "Caro-Kann Defense", playerColor: "b", solution: ["e2e4","c7c6","d2d4","d7d5"] },
+  ],
+  endgame: [
+    { name: "Rook Ladder Mate", fen: "7k/1R6/8/8/8/8/8/R3K3 w - - 0 1", playerColor: "w", solution: ["a1a8"] },
+    { name: "King & Queen Mate", fen: "7k/Q4K2/8/8/8/8/8/8 w - - 0 1", playerColor: "w", solution: ["a7g7"] },
+    { name: "Back-Rank Mate", fen: "6k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1", playerColor: "w", solution: ["e1e8"] },
+  ],
+};
+
+let inDrillMode = false;
+let drillGame = null;
+let drillSolution = [];
+let drillSolutionIndex = 0;
+let drillPlayerColor = "w";
+let drillLocked = false;
+let drillAwaitingReply = false;
+let currentDrill = null;
+let currentDrillCategory = "opening";
+
+function openDrillPicker() {
+  document.querySelectorAll(".menu-item.open").forEach((item) => item.classList.remove("open"));
+  populateDrillOptions();
+  document.getElementById("drill-picker-overlay").classList.remove("hidden");
+}
+window.openDrillPicker = openDrillPicker;
+
+function closeDrillPicker() {
+  document.getElementById("drill-picker-overlay").classList.add("hidden");
+}
+window.closeDrillPicker = closeDrillPicker;
+
+function populateDrillOptions() {
+  const category = document.getElementById("drill-category").value;
+  const select = document.getElementById("drill-select");
+  select.innerHTML = "";
+  DRILLS[category].forEach((drill, i) => {
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = drill.name;
+    select.appendChild(opt);
+  });
+}
+window.populateDrillOptions = populateDrillOptions;
+
+function startSelectedDrill() {
+  const category = document.getElementById("drill-category").value;
+  const idx = parseInt(document.getElementById("drill-select").value, 10);
+  const drill = DRILLS[category][idx];
+  currentDrillCategory = category;
+  closeDrillPicker();
+  loadDrill(drill);
+}
+window.startSelectedDrill = startSelectedDrill;
+
+function loadDrill(drill) {
+  if (maiaThinking) return;
+  if (inPuzzleMode) {
+    inPuzzleMode = false;
+    puzzleControlsEl.classList.add("hidden");
+  }
+  currentDrill = drill;
+  inDrillMode = true;
+  updateModeBadge();
+  gameControlsEl.classList.add("hidden");
+  puzzleControlsEl.classList.add("hidden");
+  document.getElementById("drill-controls").classList.remove("hidden");
+
+  drillGame = drill.fen ? new Chess(drill.fen) : new Chess();
+  drillSolution = drill.solution.slice();
+  drillSolutionIndex = 0;
+  drillPlayerColor = drill.playerColor;
+  drillLocked = false;
+  drillAwaitingReply = false;
+  selectedSquare = null;
+  lastMoveFrom = null;
+  lastMoveTo = null;
+
+  // Auto-play any leading moves that belong to the opponent before it's your turn
+  while (drillSolutionIndex < drillSolution.length && drillGame.turn() !== drillPlayerColor) {
+    const uci = drillSolution[drillSolutionIndex];
+    const from = uci.slice(0, 2), to = uci.slice(2, 4);
+    const promotion = uci.length > 4 ? uci.slice(4) : "q";
+    const leadMv = drillGame.move({ from, to, promotion });
+    lastMoveFrom = from;
+    lastMoveTo = to;
+    playGameSound(soundForMove(drillGame, leadMv));
+    drillSolutionIndex++;
+  }
+
+  boardFlipped = drillPlayerColor === "b";
+  document.getElementById("board-wrap").classList.toggle("flipped", boardFlipped);
+
+  clearTurnTags();
+  renderBoard();
+  renderMoveList();
+  statusEl.textContent = `${drill.name} — find the next move for ${drillPlayerColor === "w" ? "White" : "Black"}.`;
+  statusEl.classList.remove("status-hidden");
+}
+
+function restartCurrentDrill() {
+  if (!inDrillMode || !currentDrill) return;
+  loadDrill(currentDrill);
+}
+window.restartCurrentDrill = restartCurrentDrill;
+
+function exitDrillMode() {
+  inDrillMode = false;
+  updateModeBadge();
+  document.getElementById("drill-controls").classList.add("hidden");
+  gameControlsEl.classList.remove("hidden");
+  selectedSquare = null;
+  boardFlipped = playerColor === "b";
+  document.getElementById("board-wrap").classList.toggle("flipped", boardFlipped);
+  restoreLastMoveFromRealGame();
+  renderBoard();
+  renderMoveList();
+  updateClockDisplays();
+  if (!isGameLocked()) updateStatusForTurn();
+}
+window.exitDrillMode = exitDrillMode;
+
+async function onDrillSquareClick(sq) {
+  if (drillLocked || drillAwaitingReply) return;
+  if (drillGame.turn() !== drillPlayerColor) return;
+
+  if (selectedSquare === null) {
+    const piece = drillGame.get(sq);
+    if (piece && piece.color === drillPlayerColor) {
+      selectedSquare = sq;
+      renderBoard();
+    }
+    return;
+  }
+  if (sq === selectedSquare) {
+    selectedSquare = null;
+    renderBoard();
+    return;
+  }
+
+  const from = selectedSquare;
+  const to = sq;
+  selectedSquare = null;
+
+  const preFen = drillGame.fen();
+  const moveResult = drillGame.move({ from, to, promotion: "q" });
+
+  if (!moveResult) {
+    const piece = drillGame.get(sq);
+    if (piece && piece.color === drillPlayerColor) selectedSquare = sq;
+    renderBoard();
+    return;
+  }
+
+  const promotion = moveResult.promotion ? moveResult.promotion : "";
+  const playedUci = from + to + promotion;
+  const expectedUci = drillSolution[drillSolutionIndex];
+
+  if (playedUci !== expectedUci) {
+    drillGame.load(preFen);
+    renderBoard();
+    statusEl.textContent = "Not the drill line — try again.";
+    return;
+  }
+
+  lastMoveFrom = from;
+  lastMoveTo = to;
+  playGameSound(soundForMove(drillGame, moveResult));
+  renderBoard();
+  renderMoveList();
+  drillSolutionIndex++;
+
+  if (drillSolutionIndex >= drillSolution.length) {
+    drillLocked = true;
+    statusEl.textContent = `Drill complete! Hit Restart to try it again.`;
+    return;
+  }
+
+  drillAwaitingReply = true;
+  await humanDelay();
+  const replyUci = drillSolution[drillSolutionIndex];
+  const rFrom = replyUci.slice(0, 2), rTo = replyUci.slice(2, 4);
+  const rPromo = replyUci.length > 4 ? replyUci.slice(4) : "q";
+  const drillReplyResult = drillGame.move({ from: rFrom, to: rTo, promotion: rPromo });
+  lastMoveFrom = rFrom;
+  lastMoveTo = rTo;
+  playGameSound(soundForMove(drillGame, drillReplyResult));
+  drillSolutionIndex++;
+  renderBoard();
+  renderMoveList();
+  drillAwaitingReply = false;
+
+  if (drillSolutionIndex >= drillSolution.length) {
+    drillLocked = true;
+    statusEl.textContent = `Drill complete! Hit Restart to try it again.`;
+  } else {
+    statusEl.textContent = `${currentDrill.name} — find the next move.`;
   }
 }
 
@@ -379,8 +709,10 @@ function updateClockUnlocks() {
   if (len >= 3) blackClockStarted = true;
 }
 
+const LOWTIME_THRESHOLDS = [60, 10, 3]; // seconds: 1:00, 0:10, 0:03
+
 function tickClock() {
-  if (inPuzzleMode || isGameLocked()) return;
+  if (inPuzzleMode || inDrillMode || isGameLocked()) return;
   const turn = game.turn();
   if (turn === "w") {
     if (!whiteClockStarted) return;
@@ -391,6 +723,13 @@ function tickClock() {
     blackTime = Math.max(0, blackTime - 1);
     if (blackTime === 0) return handleTimeout("b");
   }
+
+  // Only warn about YOUR clock running low, not Maia's
+  if (turn === playerColor) {
+    const yourTime = playerColor === "w" ? whiteTime : blackTime;
+    if (LOWTIME_THRESHOLDS.includes(yourTime)) playGameSound("lowtime");
+  }
+
   updateClockDisplays();
   saveCurrentGame();
 }
@@ -400,6 +739,7 @@ function handleTimeout(loserColor) {
   gameTimedOut = true;
   timedOutColor = loserColor;
   maiaThinking = false;
+  playGameSound("checkmate"); // per request: checkmate sound covers checkmate, stalemate, and timeout
   updateClockDisplays();
   saveCurrentGame();
   clearTurnTags();
@@ -500,13 +840,14 @@ function applyLoadedState(loaded) {
   boardFlipped = playerColor === "b";
   document.getElementById("board-wrap").classList.toggle("flipped", boardFlipped);
   restoreLastMoveFromRealGame();
-  document.getElementById("your-rating").textContent = MY_ELO;
+  document.getElementById("your-rating").textContent = myRating;
   document.getElementById("maia-rating").textContent = MAIA_ELO;
 }
 
 function selectMode(mode) {
   document.querySelectorAll(".menu-item.open").forEach((item) => item.classList.remove("open"));
   if (inPuzzleMode) exitPuzzleMode();
+  if (inDrillMode) exitDrillMode();
   if (mode === currentMode) return;
 
   saveCurrentGame();
@@ -514,6 +855,7 @@ function selectMode(mode) {
   resetForNewGame(mode);
   applyLoadedState(loaded);
   saveCurrentGame();
+  updateModeBadge();
 
   closeOverlay();
   clearTurnTags();
@@ -557,6 +899,7 @@ function resign() {
   gameResigned = true;
   resignedBy = playerColor;
   maiaThinking = false;
+  playGameSound("resign");
   saveCurrentGame();
   statusEl.classList.add("status-hidden");
   clearTurnTags();
@@ -573,7 +916,7 @@ function pieceImage(piece) {
 let draggingSquare = null; // square whose piece is currently being visually dragged
 
 function renderBoard() {
-  const activeGame = inPuzzleMode ? puzzleGame : game;
+  const activeGame = inPuzzleMode ? puzzleGame : (inDrillMode ? drillGame : game);
   boardEl.innerHTML = "";
   const boardData = activeGame.board();
 
@@ -615,6 +958,7 @@ function renderBoard() {
 
 function onBoardClick(sq) {
   if (inPuzzleMode) return onPuzzleSquareClick(sq);
+  if (inDrillMode) return onDrillSquareClick(sq);
   return onSquareClick(sq);
 }
 
@@ -632,6 +976,11 @@ function pieceIsDraggableAt(sq) {
     const piece = puzzleGame.get(sq);
     return !!piece && piece.color === puzzlePlayerColor && puzzleGame.turn() === puzzlePlayerColor;
   }
+  if (inDrillMode) {
+    if (drillLocked || drillAwaitingReply || !drillGame) return false;
+    const piece = drillGame.get(sq);
+    return !!piece && piece.color === drillPlayerColor && drillGame.turn() === drillPlayerColor;
+  }
   if (maiaThinking || isGameLocked()) return false;
   const piece = game.get(sq);
   return !!piece && piece.color === playerColor && game.turn() === playerColor;
@@ -644,7 +993,7 @@ function squareFromPoint(x, y) {
 }
 
 function createGhost(sq, x, y) {
-  const activeGame = inPuzzleMode ? puzzleGame : game;
+  const activeGame = inPuzzleMode ? puzzleGame : (inDrillMode ? drillGame : game);
   const piece = activeGame.get(sq);
   if (!piece) return;
 
@@ -755,7 +1104,7 @@ document.addEventListener("pointercancel", (e) => {
 // ---------- Real move list (proper SAN, White-Black-White-Black copy order) ----------
 
 function renderMoveList() {
-  const activeGame = inPuzzleMode ? puzzleGame : game;
+  const activeGame = inPuzzleMode ? puzzleGame : (inDrillMode ? drillGame : game);
   const hist = activeGame ? activeGame.history() : [];
   let html = "";
   for (let i = 0; i < hist.length; i += 2) {
@@ -816,7 +1165,7 @@ async function runMaiaTurn() {
   const moveNumber = Math.floor(game.history().length / 2) + 1;
 
   try {
-    const [evalResult] = await Promise.all([engine.evaluate(game, MAIA_ELO, MY_ELO), humanDelay()]);
+    const [evalResult] = await Promise.all([engine.evaluate(game, MAIA_ELO, myRating), humanDelay()]);
     if (myToken !== gameToken) return;
 
     const preMoveValue = evalResult.value;
@@ -824,9 +1173,10 @@ async function runMaiaTurn() {
     const preMoveProb = evalResult.policy[uci] || 0;
     const from = uci.slice(0, 2), to = uci.slice(2, 4);
     const promotion = uci.length > 4 ? uci.slice(4) : "q";
-    game.move({ from, to, promotion });
+    const maiaMoveResult = game.move({ from, to, promotion });
     lastMoveFrom = from;
     lastMoveTo = to;
+    playGameSound(soundForMove(game, maiaMoveResult));
     updateClockUnlocks();
     renderBoard();
     renderMoveList();
@@ -897,6 +1247,7 @@ async function onSquareClick(sq) {
 
   lastMoveFrom = from;
   lastMoveTo = to;
+  playGameSound(soundForMove(game, moveResult));
   updateClockUnlocks();
   renderBoard();
   renderMoveList();
@@ -920,8 +1271,8 @@ async function onSquareClick(sq) {
   updateStatusForTurn();
 
   try {
-    const preEvalPromise = engine.evaluate(new Chess(preFen), MY_ELO, MAIA_ELO);
-    const postEvalPromise = wasMate ? Promise.resolve(null) : engine.evaluate(game, MAIA_ELO, MY_ELO);
+    const preEvalPromise = engine.evaluate(new Chess(preFen), myRating, MAIA_ELO);
+    const postEvalPromise = wasMate ? Promise.resolve(null) : engine.evaluate(game, MAIA_ELO, myRating);
     const [preEval, postEval] = await Promise.all([preEvalPromise, postEvalPromise, humanDelay()]);
 
     if (myToken !== gameToken) return;
@@ -947,9 +1298,10 @@ async function onSquareClick(sq) {
       const maiaPreMoveProb = postEval.policy[maiaUci] || 0;
       const mFrom = maiaUci.slice(0, 2), mTo = maiaUci.slice(2, 4);
       const mPromo = maiaUci.length > 4 ? maiaUci.slice(4) : "q";
-      game.move({ from: mFrom, to: mTo, promotion: mPromo });
+      const maiaInlineResult = game.move({ from: mFrom, to: mTo, promotion: mPromo });
       lastMoveFrom = mFrom;
       lastMoveTo = mTo;
+      playGameSound(soundForMove(game, maiaInlineResult));
       updateClockUnlocks();
       renderBoard();
       renderMoveList();
@@ -1062,16 +1414,42 @@ function pushHistoryEntry() {
     resultLabel = "0";
   }
 
+  // Only RATED games actually move your real rating — unrated games still show
+  // a +30/-30/0 result for reference, but it's cosmetic there.
+  if (currentMode === "rated") {
+    if (resultLabel === "+30") myRating += 30;
+    else if (resultLabel === "-30") myRating = Math.max(100, myRating - 30);
+    saveMyRating();
+    document.getElementById("your-rating").textContent = myRating;
+  }
+
   const sanMoves = game.history();
   const moveline = sanMoves.slice(0, 6).join(" ") + (sanMoves.length > 6 ? "..." : "");
 
+  // "Best Moves" combines every non-negative category (brilliant/great/book/best/excellent/good)
+  const yourBest = POSITIVE_KEYS.reduce((sum, key) => sum + playerMoveStats[key], 0);
+  const maiaBest = POSITIVE_KEYS.reduce((sum, key) => sum + maiaMoveStatsObj[key], 0);
+
   const entry = {
     result: resultLabel,
-    accuracy: (yourAcc === null ? "—" : yourAcc + "%") + " / " + (maiaAcc === null ? "—" : maiaAcc + "%"),
-    you: "You" + MY_ELO,
-    maia: "Maia" + MAIA_ELO,
-    moveline: moveline || "(no moves)",
+    rated: currentMode === "rated",
     mode: currentMode,
+    moveline: moveline || "(no moves)",
+    yourName: username,
+    yourElo: myRating,
+    maiaElo: MAIA_ELO,
+    yourAcc: yourAcc === null ? "—" : yourAcc + "%",
+    maiaAcc: maiaAcc === null ? "—" : maiaAcc + "%",
+    yourBest,
+    maiaBest,
+    yourMistakes: playerMoveStats.mistake,
+    maiaMistakes: maiaMoveStatsObj.mistake,
+    yourBlunders: playerMoveStats.blunder,
+    maiaBlunders: maiaMoveStatsObj.blunder,
+    // kept for backwards compatibility with anything still reading the old combined string
+    accuracy: (yourAcc === null ? "—" : yourAcc + "%") + " / " + (maiaAcc === null ? "—" : maiaAcc + "%"),
+    you: username + myRating,
+    maia: "Maia" + MAIA_ELO,
   };
 
   const history = loadHistory();
@@ -1084,24 +1462,56 @@ function renderHistory() {
   historyEl.innerHTML = "";
   if (history.length === 0) {
     const empty = document.createElement("div");
-    empty.style.padding = "16px 6px";
-    empty.style.color = "#888";
-    empty.style.fontSize = "13px";
+    empty.className = "history-empty";
     empty.textContent = "No games played yet.";
     historyEl.appendChild(empty);
     return;
   }
   for (const entry of history) {
-    const row = document.createElement("div");
-    row.className = "game";
-    row.innerHTML = `
-      <div>${entry.result}</div>
-      <div class="accuracy">${entry.accuracy}</div>
-      <div>${entry.you}</div>
-      <div>${entry.maia}</div>
-      <div class="moveline">${entry.moveline}</div>
+    const card = document.createElement("button");
+    card.className = "history-card";
+    card.type = "button";
+
+    // Fall back gracefully for entries saved before this richer format existed
+    const yourName = entry.yourName ?? "Me";
+    const yourElo = entry.yourElo ?? "—";
+    const maiaElo = entry.maiaElo ?? "—";
+    const yourAcc = entry.yourAcc ?? "—";
+    const maiaAcc = entry.maiaAcc ?? "—";
+    const yourBest = entry.yourBest ?? 0;
+    const maiaBest = entry.maiaBest ?? 0;
+    const yourMistakes = entry.yourMistakes ?? 0;
+    const maiaMistakes = entry.maiaMistakes ?? 0;
+    const yourBlunders = entry.yourBlunders ?? 0;
+    const maiaBlunders = entry.maiaBlunders ?? 0;
+
+    card.innerHTML = `
+      <div class="hc-head">
+        <span class="hc-result">${entry.result}</span>
+        <span class="hc-mode">${entry.rated ? "Rated" : "Unrated"}</span>
+      </div>
+      <div class="hc-top">
+        <div class="hc-player">
+          <h4>${yourName}</h4>
+          <div class="hc-stat">${yourElo}</div>
+          <div class="hc-stat">${yourAcc}</div>
+          <div class="hc-stat">B ${yourBest}</div>
+          <div class="hc-stat">M ${yourMistakes}</div>
+          <div class="hc-stat">X ${yourBlunders}</div>
+        </div>
+        <div class="hc-divider"></div>
+        <div class="hc-player">
+          <h4>Maia</h4>
+          <div class="hc-stat">${maiaElo}</div>
+          <div class="hc-stat">${maiaAcc}</div>
+          <div class="hc-stat">B ${maiaBest}</div>
+          <div class="hc-stat">M ${maiaMistakes}</div>
+          <div class="hc-stat">X ${maiaBlunders}</div>
+        </div>
+      </div>
+      <div class="hc-moves">${entry.moveline}</div>
     `;
-    historyEl.appendChild(row);
+    historyEl.appendChild(card);
   }
 }
 
@@ -1137,6 +1547,10 @@ window.closeOverlay = closeOverlay;
 async function init() {
   renderHistory();
   statusEl.textContent = "Loading...";
+  updateModeBadge();
+  updateUsernameDisplay();
+  updateSoundButtonLabel();
+  updateDefaultModeButtonLabel();
 
   // Render a board immediately with whatever's saved, so a later failure
   // (engine, puzzles, etc.) never leaves the page looking blank.
@@ -1166,7 +1580,10 @@ async function init() {
 
     setInterval(tickClock, 1000);
 
-    if (isGameLocked()) {
+    // On a brand-new session with no prior game saved, respect "Default Game Mode = Puzzles"
+    if (!hadPriorSession && defaultMode === "puzzles") {
+      enterPuzzleMode();
+    } else if (isGameLocked()) {
       showGameOverPopup();
     } else {
       updateStatusForTurn();
