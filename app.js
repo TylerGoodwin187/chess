@@ -119,13 +119,29 @@ function updateDefaultModeButtonLabel() {
   if (btn) btn.textContent = "Default: " + defaultMode.charAt(0).toUpperCase() + defaultMode.slice(1);
 }
 
-// --- Clear saved data ---
+// --- Clear all saved data ---
 function clearAllSavedData() {
-  document.querySelectorAll(".menu-item.open").forEach((item) => item.classList.remove("open"));
-  if (!confirm("Clear all saved games, history, and ratings? This can't be undone.")) return;
+  document.querySelectorAll(".menu-item.open").forEach((item) => {
+    item.classList.remove("open");
+  });
+
+  if (!confirm("Clear all saved data? This will reset the website completely and cannot be undone.")) {
+    return;
+  }
+
   localStorage.clear();
+  sessionStorage.clear();
+
+  // Clear offline cached files if your PWA uses a service worker
+  if ("caches" in window) {
+    caches.keys().then((keys) => {
+      keys.forEach((key) => caches.delete(key));
+    });
+  }
+
   location.reload();
 }
+
 window.clearAllSavedData = clearAllSavedData;
 const STARTING_CLOCK_SECONDS = 600;
 
