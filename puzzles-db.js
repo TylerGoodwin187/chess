@@ -197,7 +197,7 @@ function queryPuzzleNearRating(db, targetRating, excludeFens) {
     const hi = targetRating + window;
 
     const sql = `SELECT fen, moves, rating FROM puzzles
-                 WHERE CAST(rating AS INTEGER) BETWEEN ? AND ? ${notInClause}
+                 WHERE rating AS INTEGER BETWEEN ? AND ? ${notInClause}
                  ORDER BY RANDOM() LIMIT 1`;
     console.log(sql);
     console.log("Target:", targetRating);
@@ -220,6 +220,7 @@ function queryPuzzleNearRating(db, targetRating, excludeFens) {
       if (found) {
           row = stmt.getAsObject();
       }
+      console.log(bindings);
       if (stmt.step(bindings)) {
         console.log("Found:", stmt.getAsObject());
         row = stmt.getAsObject();
