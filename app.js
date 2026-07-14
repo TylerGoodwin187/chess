@@ -607,6 +607,9 @@ function loadDrill(drill) {
   document.getElementById("drill-controls").classList.remove("hidden");
 
   drillGame = drill.fen ? new Chess(drill.fen) : new Chess();
+  
+  console.log(drill);
+  
   drillSolution = drill.solution.slice();
   drillSolutionIndex = 0;
   drillPlayerColor = drill.playerColor;
