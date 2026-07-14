@@ -73,11 +73,10 @@ function updateSoundButtonLabel() {
 
 // Sound files expected in the project root, next to index.html:
 // move.mp3, capture.mp3, check.mp3, checkmate.mp3, draw.mp3, lowtime.mp3
-// (no resign.mp3 — resignation uses the checkmate sound)
 const SOUND_FILES = ["move", "capture", "check", "checkmate", "draw", "lowtime"];
 const soundCache = {};
 for (const name of SOUND_FILES) {
-  const audio = new Audio(`./${name}.mp3`);
+  const audio = new Audio(`./sounds/${name}.mp3`);
   audio.preload = "auto";
   soundCache[name] = audio;
 }
@@ -195,7 +194,6 @@ function isGameLocked() {
 
 // ---------- Puzzle mode ----------
 
-let PUZZLES = [];
 let lastPuzzleFen = null;
 
 let inPuzzleMode = false;
@@ -208,34 +206,16 @@ let puzzleAwaitingReply = false;
 let puzzleLocked = false;
 let puzzleMissedAlready = false;
 
-async function loadPuzzleData() {
-  try {
-    const res = await fetch("./data/puzzles.json");
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    if (!Array.isArray(data) || data.length === 0) throw new Error("Empty or invalid puzzle data");
-    PUZZLES = data;
-    PUZZLES.sort((a, b) => a.rating - b.rating);
-  } catch (err) {
-    console.error("Failed to load puzzles.json — puzzle mode will be unavailable:", err);
-    PUZZLES = [];
-  }
-}
-
-function selectPuzzle() {
-  let candidates = PUZZLES.filter((p) => p.rating >= puzzleRating && p.fen !== lastPuzzleFen);
-  if (candidates.length === 0) candidates = PUZZLES.filter((p) => p.rating >= puzzleRating);
-  if (candidates.length === 0) candidates = PUZZLES.filter((p) => p.fen !== lastPuzzleFen);
-  if (candidates.length === 0) candidates = PUZZLES;
-  return candidates[0];
-}
-
 function savePuzzleRating() {
   localStorage.setItem("chess_puzzle_rating", String(puzzleRating));
 }
 
-function loadNextPuzzle() {
-  const puzzle = selectPuzzle();
+async function loadNextPuzzle() {
+  const puzzle = await PuzzleDB.getRandomPuzzle(
+    puzzleRating,
+    lastPuzzleFen
+  );
+
   lastPuzzleFen = puzzle.fen;
   puzzleGame = new Chess(puzzle.fen);
   puzzleSolution = puzzle.solution.slice();
@@ -268,32 +248,28 @@ function updatePuzzleActionButton() {
   btn.textContent = puzzleLocked ? "Next" : "Give Up";
 }
 
-function handlePuzzleAction() {
+async function handlePuzzleAction() {
   if (puzzleLocked) {
-    loadNextPuzzle();
+    await loadNextPuzzle();
   } else {
     giveUpPuzzle();
   }
 }
 window.handlePuzzleAction = handlePuzzleAction;
 
-function enterPuzzleMode() {
+async function enterPuzzleMode() {
   document.querySelectorAll(".menu-item.open").forEach((item) => item.classList.remove("open"));
   if (maiaThinking) return;
   if (inDrillMode) {
     inDrillMode = false;
     document.getElementById("drill-controls").classList.add("hidden");
   }
-  if (PUZZLES.length === 0) {
-    statusEl.textContent = "Puzzles failed to load — check that data/puzzles.json exists next to index.html.";
-    statusEl.classList.remove("status-hidden");
-    return;
-  }
+
   inPuzzleMode = true;
   updateModeBadge();
   gameControlsEl.classList.add("hidden");
   puzzleControlsEl.classList.remove("hidden");
-  loadNextPuzzle();
+  await loadNextPuzzle();
 }
 window.enterPuzzleMode = enterPuzzleMode;
 
@@ -996,7 +972,7 @@ window.resign = resign;
 // ---------- Board rendering ----------
 
 function pieceImage(piece) {
-  return `./${piece.type}${piece.color}.png`;
+  return `./images/${piece.type}${piece.color}.png`;
 }
 
 let draggingSquare = null;
