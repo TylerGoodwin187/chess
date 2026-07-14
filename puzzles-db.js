@@ -173,29 +173,72 @@ async function ensureDbLoaded(filename) {
 }
 
 function queryRandomRow(db) {
-  const stmt = db.prepare("SELECT fen, moves, rating FROM puzzles ORDER BY RANDOM() LIMIT 1");
-  let row = null;
+  // Get the highest rowid
+  let stmt = db.prepare("SELECT MAX(rowid) AS maxRow FROM puzzles");
+
+  let maxRow = 0;
   try {
     if (stmt.step()) {
+      maxRow = stmt.getAsObject().maxRow;
+    }
+  } finally {
+    stmt.free();
+  }
+
+  if (!maxRow) return null;
+
+  // Pick a random rowid
+  const randomRow = Math.floor(Math.random() * maxRow) + 1;
+
+  // Jump directly to that row
+  stmt = db.prepare(`
+    SELECT fen, moves, rating
+    FROM puzzles
+    WHERE rowid >= ?
+    LIMIT 1
+  `);
+
+  let row = null;
+
+  try {
+    if (stmt.step([randomRow])) {
       row = stmt.getAsObject();
     }
   } finally {
     stmt.free();
   }
+
+  // If we picked beyond the last existing row, wrap around
+  if (!row) {
+    stmt = db.prepare(`
+      SELECT fen, moves, rating
+      FROM puzzles
+      LIMIT 1
+    `);
+
+    try {
+      if (stmt.step()) {
+        row = stmt.getAsObject();
+      }
+    } finally {
+      stmt.free();
+    }
+  }
+
   return row;
 }
-
-// Returns { fen, solution, rating } — the same shape the rest of app.js
-// already expects from a puzzle object.
 async function getRandomPuzzle(rating, excludeFen) {
   const filename = dbFileForRating(rating);
   const db = await ensureDbLoaded(filename);
 
   let row = queryRandomRow(db);
-  if (row && excludeFen && row.fen === excludeFen) {
+
+  for (let i = 0; row && excludeFen && row.fen === excludeFen && i < 10; i++) {
     const retry = queryRandomRow(db);
-    if (retry) row = retry;
+    if (!retry) break;
+    row = retry;
   }
+
   if (!row) throw new Error("No puzzles found in " + filename);
 
   return {
