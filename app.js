@@ -269,7 +269,9 @@ async function enterPuzzleMode() {
   updateModeBadge();
   gameControlsEl.classList.add("hidden");
   puzzleControlsEl.classList.remove("hidden");
+  console.log("Entered puzzle mode");
   await loadNextPuzzle();
+  console.log("Finished loadNextPuzzle");
 }
 window.enterPuzzleMode = enterPuzzleMode;
 
