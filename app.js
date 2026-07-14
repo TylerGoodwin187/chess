@@ -1619,7 +1619,7 @@ async function init() {
 
   try {
     await MaiaTensor.initMoveTables("./data/");
-    await loadPuzzleData();
+    // await loadPuzzleData();
     await loadOpeningsData();
 
     engine = new MaiaEngine({
