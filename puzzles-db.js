@@ -182,24 +182,28 @@ const RATING_SEARCH_WINDOWS = [50, 100, 200, 400, 100000];
 // Picks a puzzle whose rating is as close as possible to `targetRating`,
 // starting with a tight window and widening only if nothing matches.
 // Randomization AND rating-distance filtering both happen inside SQLite —
-// only the one chosen row crosses into JS.
-function queryPuzzleNearRating(db, targetRating, excludeFen) {
+// only the one chosen row crosses into JS. `excludeFens` can hold many
+// recently-served FENs (not just the last one) so small rating windows
+// don't just hand back the same puzzle every couple of loads.
+function queryPuzzleNearRating(db, targetRating, excludeFens) {
+  const exclusions = Array.isArray(excludeFens) ? excludeFens : (excludeFens ? [excludeFens] : []);
+  const hasExclusions = exclusions.length > 0;
+  const notInClause = hasExclusions
+    ? `AND fen NOT IN (${exclusions.map(() => "?").join(",")})`
+    : "";
+
   for (const window of RATING_SEARCH_WINDOWS) {
     const lo = targetRating - window;
     const hi = targetRating + window;
 
-    const sql = excludeFen
-      ? `SELECT fen, moves, rating FROM puzzles
-         WHERE rating BETWEEN ? AND ? AND fen != ?
-         ORDER BY RANDOM() LIMIT 1`
-      : `SELECT fen, moves, rating FROM puzzles
-         WHERE rating BETWEEN ? AND ?
-         ORDER BY RANDOM() LIMIT 1`;
+    const sql = `SELECT fen, moves, rating FROM puzzles
+                 WHERE CAST(rating AS INTEGER) BETWEEN ? AND ? ${notInClause}
+                 ORDER BY RANDOM() LIMIT 1`;
 
     const stmt = db.prepare(sql);
     let row = null;
     try {
-      const bindings = excludeFen ? [lo, hi, excludeFen] : [lo, hi];
+      const bindings = hasExclusions ? [lo, hi, ...exclusions] : [lo, hi];
       if (stmt.step(bindings)) {
         row = stmt.getAsObject();
       }
@@ -212,18 +216,20 @@ function queryPuzzleNearRating(db, targetRating, excludeFen) {
   return null;
 }
 
-async function getRandomPuzzle(rating, excludeFen) {
+async function getRandomPuzzle(rating, excludeFens) {
   console.log("Getting puzzle near rating", rating, "...");
   const filename = dbFileForRating(rating);
   const db = await ensureDbLoaded(filename);
   console.log("Database loaded");
 
-  let row = queryPuzzleNearRating(db, rating, excludeFen);
+  const exclusions = Array.isArray(excludeFens) ? excludeFens : (excludeFens ? [excludeFens] : []);
 
-  // If the only near-rating match happened to be the excluded (just-played)
-  // puzzle and nothing else is close, drop the exclusion rather than fail.
-  if (!row && excludeFen) {
-    row = queryPuzzleNearRating(db, rating, null);
+  let row = queryPuzzleNearRating(db, rating, exclusions);
+
+  // If excluding recent history leaves nothing close enough (small window,
+  // sparse pool), drop the exclusion rather than fail outright.
+  if (!row && exclusions.length > 0) {
+    row = queryPuzzleNearRating(db, rating, []);
   }
 
   console.log(row);
