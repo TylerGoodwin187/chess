@@ -234,8 +234,12 @@ function savePuzzleRating() {
   localStorage.setItem("chess_puzzle_rating", String(puzzleRating));
 }
 
-function loadNextPuzzle() {
-  const puzzle = selectPuzzle();
+async function loadNextPuzzle() {
+  const puzzle = await PuzzleDB.getRandomPuzzle(
+    puzzleRating,
+    lastPuzzleFen
+  );
+
   lastPuzzleFen = puzzle.fen;
   puzzleGame = new Chess(puzzle.fen);
   puzzleSolution = puzzle.solution.slice();
@@ -270,7 +274,7 @@ function updatePuzzleActionButton() {
 
 function handlePuzzleAction() {
   if (puzzleLocked) {
-    loadNextPuzzle();
+    await loadNextPuzzle();
   } else {
     giveUpPuzzle();
   }
@@ -293,7 +297,7 @@ function enterPuzzleMode() {
   updateModeBadge();
   gameControlsEl.classList.add("hidden");
   puzzleControlsEl.classList.remove("hidden");
-  loadNextPuzzle();
+  await loadNextPuzzle();
 }
 window.enterPuzzleMode = enterPuzzleMode;
 
