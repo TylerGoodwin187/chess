@@ -972,7 +972,7 @@ window.resign = resign;
 // ---------- Board rendering ----------
 
 function pieceImage(piece) {
-  return `./${piece.type}${piece.color}.png`;
+  return `./images/${piece.type}${piece.color}.png`;
 }
 
 let draggingSquare = null;
