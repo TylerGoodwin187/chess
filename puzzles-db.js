@@ -177,7 +177,7 @@ async function ensureDbLoaded(filename) {
 // side of the target. The last entry is effectively "give up narrowing and
 // take anything in this bucket" so we always find *something* if the bucket
 // has any puzzles at all.
-const RATING_SEARCH_WINDOWS = [50, 100, 200, 400, 100000];
+const RATING_SEARCH_WINDOWS = [0, 1, 2, 3, 4, 5];
 
 // Picks a puzzle whose rating is as close as possible to `targetRating`,
 // starting with a tight window and widening only if nothing matches.
