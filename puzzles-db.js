@@ -228,10 +228,13 @@ function queryRandomRow(db) {
   return row;
 }
 async function getRandomPuzzle(rating, excludeFen) {
+  console.log("Getting random puzzle...");
   const filename = dbFileForRating(rating);
   const db = await ensureDbLoaded(filename);
+  console.log("Database loaded");
 
   let row = queryRandomRow(db);
+  console.log(row);
 
   for (let i = 0; row && excludeFen && row.fen === excludeFen && i < 10; i++) {
     const retry = queryRandomRow(db);
