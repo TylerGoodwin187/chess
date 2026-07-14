@@ -208,6 +208,18 @@ function queryPuzzleNearRating(db, targetRating, excludeFens) {
     let row = null;
     try {
       const bindings = hasExclusions ? [lo, hi, ...exclusions] : [lo, hi];
+      console.log({
+          lo,
+          hi,
+          bindings,
+          exclusions
+      });
+      const found = stmt.step(bindings);
+      console.log("Found?", found);
+      
+      if (found) {
+          row = stmt.getAsObject();
+      }
       if (stmt.step(bindings)) {
         console.log("Found:", stmt.getAsObject());
         row = stmt.getAsObject();
