@@ -195,7 +195,6 @@ function isGameLocked() {
 
 // ---------- Puzzle mode ----------
 
-let PUZZLES = [];
 let lastPuzzleFen = null;
 
 let inPuzzleMode = false;
@@ -207,28 +206,6 @@ let puzzleRating = parseInt(localStorage.getItem("chess_puzzle_rating") || "400"
 let puzzleAwaitingReply = false;
 let puzzleLocked = false;
 let puzzleMissedAlready = false;
-
-async function loadPuzzleData() {
-  try {
-    const res = await fetch("./data/puzzles.json");
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    if (!Array.isArray(data) || data.length === 0) throw new Error("Empty or invalid puzzle data");
-    PUZZLES = data;
-    PUZZLES.sort((a, b) => a.rating - b.rating);
-  } catch (err) {
-    console.error("Failed to load puzzles.json — puzzle mode will be unavailable:", err);
-    PUZZLES = [];
-  }
-}
-
-function selectPuzzle() {
-  let candidates = PUZZLES.filter((p) => p.rating >= puzzleRating && p.fen !== lastPuzzleFen);
-  if (candidates.length === 0) candidates = PUZZLES.filter((p) => p.rating >= puzzleRating);
-  if (candidates.length === 0) candidates = PUZZLES.filter((p) => p.fen !== lastPuzzleFen);
-  if (candidates.length === 0) candidates = PUZZLES;
-  return candidates[0];
-}
 
 function savePuzzleRating() {
   localStorage.setItem("chess_puzzle_rating", String(puzzleRating));
@@ -272,7 +249,7 @@ function updatePuzzleActionButton() {
   btn.textContent = puzzleLocked ? "Next" : "Give Up";
 }
 
-function handlePuzzleAction() {
+async function handlePuzzleAction() {
   if (puzzleLocked) {
     await loadNextPuzzle();
   } else {
@@ -281,18 +258,14 @@ function handlePuzzleAction() {
 }
 window.handlePuzzleAction = handlePuzzleAction;
 
-function enterPuzzleMode() {
+async function enterPuzzleMode() {
   document.querySelectorAll(".menu-item.open").forEach((item) => item.classList.remove("open"));
   if (maiaThinking) return;
   if (inDrillMode) {
     inDrillMode = false;
     document.getElementById("drill-controls").classList.add("hidden");
   }
-  if (PUZZLES.length === 0) {
-    statusEl.textContent = "Puzzles failed to load — check that data/puzzles.json exists next to index.html.";
-    statusEl.classList.remove("status-hidden");
-    return;
-  }
+
   inPuzzleMode = true;
   updateModeBadge();
   gameControlsEl.classList.add("hidden");
