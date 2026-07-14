@@ -199,14 +199,22 @@ function isGameLocked() {
 
 // ---------- Puzzle mode ----------
 
-let lastPuzzleFen = null;
+// Track a short history of recently-served puzzle FENs (not just the last
+// one) so the rating-window query has more to exclude and stops handing
+// back the same puzzle every couple of loads.
+let recentPuzzleFens = [];
+const RECENT_PUZZLE_HISTORY = 25;
 
 let inPuzzleMode = false;
 let puzzleGame = null;
 let puzzleSolution = [];
 let puzzleSolutionIndex = 0;
 let puzzlePlayerColor = "w";
-let puzzleRating = parseInt(localStorage.getItem("chess_puzzle_rating") || "400", 10);
+const PUZZLE_RATING_FLOOR = 400; // puzzle rating starts here and can never drop below it
+let puzzleRating = Math.max(
+  PUZZLE_RATING_FLOOR,
+  parseInt(localStorage.getItem("chess_puzzle_rating") || "400", 10)
+);
 let puzzleAwaitingReply = false;
 let puzzleLocked = false;
 let puzzleMissedAlready = false;
@@ -232,7 +240,9 @@ const PUZZLE_WRONG_PENALTY = 0.22;   // performance lost per wrong attempt
 // computes your performance score S in [-1, 1], compares it to the Elo-expected
 // score E for facing a puzzle of that difficulty, and returns the rating delta.
 function computePuzzleRatingDelta() {
-  const movesRequired = Math.ceil(puzzleSolution.length / 2); // only your moves count, not Maia's replies
+  // solution[0] is the auto-played opponent setup move, not a move you make —
+  // only count moves from index 1 onward, and only every other one of those.
+  const movesRequired = Math.max(1, Math.ceil((puzzleSolution.length - 1) / 2));
   const expectedTime = movesRequired * PUZZLE_BASE_TIME_PER_MOVE;
   const timeTaken = (performance.now() - puzzleStartTime) / 1000;
 
@@ -262,15 +272,37 @@ window.usePuzzleHint = usePuzzleHint;
 async function loadNextPuzzle() {
   const puzzle = await PuzzleDB.getRandomPuzzle(
     puzzleRating,
-    lastPuzzleFen
+    recentPuzzleFens
   );
 
-  lastPuzzleFen = puzzle.fen;
+  recentPuzzleFens.push(puzzle.fen);
+  if (recentPuzzleFens.length > RECENT_PUZZLE_HISTORY) recentPuzzleFens.shift();
+
   puzzleGame = new Chess(puzzle.fen);
   puzzleSolution = puzzle.solution.slice();
   puzzleSolutionIndex = 0;
   lastMoveFrom = null;
   lastMoveTo = null;
+
+  // Standard puzzle-DB convention: the FEN is the position BEFORE the
+  // opponent's setup move, and solution[0] is that opponent move — it is
+  // NOT something the player needs to find. Auto-play it silently before
+  // handing control over, then start scoring attempts from solution[1].
+  // Skipping this step is what let a player's move get matched against the
+  // opponent's forced move, then get auto-mated by their own real solution
+  // while the game still reported "Solved!".
+  if (puzzleSolution.length > 0) {
+    const setupUci = puzzleSolution[0];
+    const sFrom = setupUci.slice(0, 2), sTo = setupUci.slice(2, 4);
+    const sPromo = setupUci.length > 4 ? setupUci.slice(4) : "q";
+    const setupMove = puzzleGame.move({ from: sFrom, to: sTo, promotion: sPromo });
+    if (setupMove) {
+      lastMoveFrom = sFrom;
+      lastMoveTo = sTo;
+      puzzleSolutionIndex = 1;
+    }
+  }
+
   puzzlePlayerColor = puzzleGame.turn();
   puzzleAwaitingReply = false;
   puzzleLocked = false;
@@ -370,7 +402,7 @@ function giveUpPuzzle() {
   const puzzleRatingValue = parseInt(document.getElementById("maia-rating").textContent, 10) || puzzleRating;
   const E = 1 / (1 + Math.pow(10, (puzzleRatingValue - puzzleRating) / 400));
   const delta = Math.round(PUZZLE_RATING_K * (-1 - E));
-  puzzleRating = clamp(puzzleRating + delta, 100, 3000);
+  puzzleRating = clamp(puzzleRating + delta, PUZZLE_RATING_FLOOR, 3000);
   savePuzzleRating();
   document.getElementById("your-rating").textContent = puzzleRating;
 
@@ -453,7 +485,7 @@ async function onPuzzleSquareClick(sq) {
   if (puzzleSolutionIndex >= puzzleSolution.length) {
     puzzleLocked = true;
     const delta = computePuzzleRatingDelta();
-    puzzleRating = clamp(puzzleRating + delta, 100, 3000);
+    puzzleRating = clamp(puzzleRating + delta, PUZZLE_RATING_FLOOR, 3000);
     savePuzzleRating();
     document.getElementById("your-rating").textContent = puzzleRating;
     statusEl.textContent = `Solved! ${delta >= 0 ? "+" : ""}${delta} → Puzzle Rating ${puzzleRating}`;
@@ -478,7 +510,7 @@ async function onPuzzleSquareClick(sq) {
   if (puzzleSolutionIndex >= puzzleSolution.length) {
     puzzleLocked = true;
     const delta = computePuzzleRatingDelta();
-    puzzleRating = clamp(puzzleRating + delta, 100, 3000);
+    puzzleRating = clamp(puzzleRating + delta, PUZZLE_RATING_FLOOR, 3000);
     savePuzzleRating();
     document.getElementById("your-rating").textContent = puzzleRating;
     statusEl.textContent = `Solved! ${delta >= 0 ? "+" : ""}${delta} → Puzzle Rating ${puzzleRating}`;
