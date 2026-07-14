@@ -11,8 +11,9 @@
 //     range without hitting the network again.
 //
 // Only ONE sql.js database connection is kept open at a time. Puzzles are
-// fetched with SQL queries (ORDER BY RANDOM() LIMIT 1) — we never load an
-// entire table into JavaScript.
+// fetched with SQL queries — we never load an entire table into JavaScript,
+// filtering and randomization both happen inside the SQL engine (WASM), only
+// the single winning row crosses over into JS.
 
 const PUZZLE_DB_RANGES = [
   { min: 100, max: 800, file: "puzzles_0100_0800.db" },
@@ -172,75 +173,60 @@ async function ensureDbLoaded(filename) {
   }
 }
 
-function queryRandomRow(db) {
-  // Get the highest rowid
-  let stmt = db.prepare("SELECT MAX(rowid) AS maxRow FROM puzzles");
+// Progressively widening rating windows to search, in rating points on either
+// side of the target. The last entry is effectively "give up narrowing and
+// take anything in this bucket" so we always find *something* if the bucket
+// has any puzzles at all.
+const RATING_SEARCH_WINDOWS = [50, 100, 200, 400, 100000];
 
-  let maxRow = 0;
-  try {
-    if (stmt.step()) {
-      maxRow = stmt.getAsObject().maxRow;
-    }
-  } finally {
-    stmt.free();
-  }
+// Picks a puzzle whose rating is as close as possible to `targetRating`,
+// starting with a tight window and widening only if nothing matches.
+// Randomization AND rating-distance filtering both happen inside SQLite —
+// only the one chosen row crosses into JS.
+function queryPuzzleNearRating(db, targetRating, excludeFen) {
+  for (const window of RATING_SEARCH_WINDOWS) {
+    const lo = targetRating - window;
+    const hi = targetRating + window;
 
-  if (!maxRow) return null;
+    const sql = excludeFen
+      ? `SELECT fen, moves, rating FROM puzzles
+         WHERE rating BETWEEN ? AND ? AND fen != ?
+         ORDER BY RANDOM() LIMIT 1`
+      : `SELECT fen, moves, rating FROM puzzles
+         WHERE rating BETWEEN ? AND ?
+         ORDER BY RANDOM() LIMIT 1`;
 
-  // Pick a random rowid
-  const randomRow = Math.floor(Math.random() * maxRow) + 1;
-
-  // Jump directly to that row
-  stmt = db.prepare(`
-    SELECT fen, moves, rating
-    FROM puzzles
-    WHERE rowid >= ?
-    LIMIT 1
-  `);
-
-  let row = null;
-
-  try {
-    if (stmt.step([randomRow])) {
-      row = stmt.getAsObject();
-    }
-  } finally {
-    stmt.free();
-  }
-
-  // If we picked beyond the last existing row, wrap around
-  if (!row) {
-    stmt = db.prepare(`
-      SELECT fen, moves, rating
-      FROM puzzles
-      LIMIT 1
-    `);
-
+    const stmt = db.prepare(sql);
+    let row = null;
     try {
-      if (stmt.step()) {
+      const bindings = excludeFen ? [lo, hi, excludeFen] : [lo, hi];
+      if (stmt.step(bindings)) {
         row = stmt.getAsObject();
       }
     } finally {
       stmt.free();
     }
-  }
 
-  return row;
+    if (row) return row;
+  }
+  return null;
 }
+
 async function getRandomPuzzle(rating, excludeFen) {
-  console.log("Getting random puzzle...");
+  console.log("Getting puzzle near rating", rating, "...");
   const filename = dbFileForRating(rating);
   const db = await ensureDbLoaded(filename);
   console.log("Database loaded");
 
-  let row = queryRandomRow(db);
-  console.log(row);
+  let row = queryPuzzleNearRating(db, rating, excludeFen);
 
-  for (let i = 0; row && excludeFen && row.fen === excludeFen && i < 10; i++) {
-    const retry = queryRandomRow(db);
-    if (!retry) break;
-    row = retry;
+  // If the only near-rating match happened to be the excluded (just-played)
+  // puzzle and nothing else is close, drop the exclusion rather than fail.
+  if (!row && excludeFen) {
+    row = queryPuzzleNearRating(db, rating, null);
   }
+
+  console.log(row);
 
   if (!row) throw new Error("No puzzles found in " + filename);
 
