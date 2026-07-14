@@ -20,6 +20,11 @@ function saveMyRating() {
   localStorage.setItem("chess_my_rating", String(myRating));
 }
 
+// ---------- Small helpers ----------
+function clamp(v, lo, hi) {
+  return Math.min(hi, Math.max(lo, v));
+}
+
 // ---------- Settings ----------
 let username = localStorage.getItem("chess_username") || "You";
 let soundEnabled = localStorage.getItem("chess_sound_enabled") !== "false"; // default on
@@ -206,17 +211,59 @@ let puzzleAwaitingReply = false;
 let puzzleLocked = false;
 let puzzleMissedAlready = false;
 
+// Puzzle performance tracking
+let puzzleStartTime = 0;
+let puzzleWrongAttempts = 0;
+let puzzleHintsUsed = 0;
 function savePuzzleRating() {
   localStorage.setItem("chess_puzzle_rating", String(puzzleRating));
 }
 
+// ---------- Puzzle rating formula ----------
+// Rating change = K * (performance - expected), Elo-style, where "performance" (S)
+// is built from how fast you solved it, minus penalties for hints and wrong tries.
+const PUZZLE_RATING_K = 60;          // max swing on a dead-even, perfect, instant solve
+const PUZZLE_BASE_TIME_PER_MOVE = 8; // seconds considered "on pace" per move you have to find
+const PUZZLE_TIME_WINDOW = 3;        // how many "baselines" of extra time before time credit hits 0
+const PUZZLE_HINT_PENALTY = 0.18;    // performance lost per hint used
+const PUZZLE_WRONG_PENALTY = 0.22;   // performance lost per wrong attempt
+
+// Reads the puzzle's own difficulty rating off the UI (set in loadNextPuzzle),
+// computes your performance score S in [-1, 1], compares it to the Elo-expected
+// score E for facing a puzzle of that difficulty, and returns the rating delta.
+function computePuzzleRatingDelta() {
+  const movesRequired = Math.ceil(puzzleSolution.length / 2); // only your moves count, not Maia's replies
+  const expectedTime = movesRequired * PUZZLE_BASE_TIME_PER_MOVE;
+  const timeTaken = (performance.now() - puzzleStartTime) / 1000;
+
+  const timeFactor = clamp(
+    1 - Math.max(0, timeTaken - expectedTime) / (expectedTime * PUZZLE_TIME_WINDOW),
+    0,
+    1
+  );
+
+  let S = timeFactor - PUZZLE_HINT_PENALTY * puzzleHintsUsed - PUZZLE_WRONG_PENALTY * puzzleWrongAttempts;
+  S = clamp(S, -1, 1);
+
+  const puzzleRatingValue = parseInt(document.getElementById("maia-rating").textContent, 10) || puzzleRating;
+  const E = 1 / (1 + Math.pow(10, (puzzleRatingValue - puzzleRating) / 400));
+
+  return Math.round(PUZZLE_RATING_K * (S - E));
+}
+
+// Hook this up to a hint button whenever you add one. Each call costs performance
+// but doesn't reveal anything itself — wire your actual hint UI in here too.
+function usePuzzleHint() {
+  if (!inPuzzleMode || puzzleLocked || puzzleAwaitingReply) return;
+  puzzleHintsUsed++;
+}
+window.usePuzzleHint = usePuzzleHint;
+
 async function loadNextPuzzle() {
-  console.log("Loading puzzle...");
   const puzzle = await PuzzleDB.getRandomPuzzle(
     puzzleRating,
     lastPuzzleFen
   );
-  console.log("Puzzle:", puzzle);
 
   lastPuzzleFen = puzzle.fen;
   puzzleGame = new Chess(puzzle.fen);
@@ -228,6 +275,9 @@ async function loadNextPuzzle() {
   puzzleAwaitingReply = false;
   puzzleLocked = false;
   puzzleMissedAlready = false;
+  puzzleStartTime = performance.now();
+  puzzleWrongAttempts = 0;
+  puzzleHintsUsed = 0;
   selectedSquare = null;
 
   boardFlipped = puzzlePlayerColor === "b";
@@ -315,6 +365,15 @@ function restoreLastMoveFromRealGame() {
 function giveUpPuzzle() {
   if (!inPuzzleMode || puzzleLocked) return;
   puzzleLocked = true;
+
+  // Giving up scores like a worst-case attempt (S = -1) against this puzzle's Elo.
+  const puzzleRatingValue = parseInt(document.getElementById("maia-rating").textContent, 10) || puzzleRating;
+  const E = 1 / (1 + Math.pow(10, (puzzleRatingValue - puzzleRating) / 400));
+  const delta = Math.round(PUZZLE_RATING_K * (-1 - E));
+  puzzleRating = clamp(puzzleRating + delta, 100, 3000);
+  savePuzzleRating();
+  document.getElementById("your-rating").textContent = puzzleRating;
+
   const sanParts = [];
   for (let i = puzzleSolutionIndex; i < puzzleSolution.length; i++) {
     const uci = puzzleSolution[i];
@@ -331,7 +390,7 @@ function giveUpPuzzle() {
   renderBoard();
   renderMoveList();
   updatePuzzleActionButton();
-  statusEl.textContent = "Solution: " + sanParts.join(" ");
+  statusEl.textContent = `Solution: ${sanParts.join(" ")}  (${delta >= 0 ? "+" : ""}${delta} → Puzzle Rating ${puzzleRating})`;
   statusEl.classList.remove("status-hidden");
 }
 window.giveUpPuzzle = giveUpPuzzle;
@@ -373,15 +432,14 @@ async function onPuzzleSquareClick(sq) {
   const expectedUci = puzzleSolution[puzzleSolutionIndex];
 
   if (playedUci !== expectedUci) {
+    // Rating is no longer docked immediately — every wrong try just feeds the
+    // performance formula, which gets settled once when the puzzle ends
+    // (solved or given up).
+    puzzleWrongAttempts++;
+    puzzleMissedAlready = true;
     puzzleGame.load(preFen);
     renderBoard();
-    if (!puzzleMissedAlready) {
-      puzzleMissedAlready = true;
-      puzzleRating = Math.max(100, puzzleRating - 20);
-      savePuzzleRating();
-      document.getElementById("your-rating").textContent = puzzleRating;
-    }
-    statusEl.textContent = `Not quite — try again, or Give Up to see the answer. (Puzzle Rating ${puzzleRating})`;
+    statusEl.textContent = `Not quite — try again, or Give Up to see the answer.`;
     return;
   }
 
@@ -394,12 +452,11 @@ async function onPuzzleSquareClick(sq) {
 
   if (puzzleSolutionIndex >= puzzleSolution.length) {
     puzzleLocked = true;
-    if (!puzzleMissedAlready) {
-      puzzleRating += 15;
-      savePuzzleRating();
-      document.getElementById("your-rating").textContent = puzzleRating;
-    }
-    statusEl.textContent = `Solved! Puzzle Rating ${puzzleRating}`;
+    const delta = computePuzzleRatingDelta();
+    puzzleRating = clamp(puzzleRating + delta, 100, 3000);
+    savePuzzleRating();
+    document.getElementById("your-rating").textContent = puzzleRating;
+    statusEl.textContent = `Solved! ${delta >= 0 ? "+" : ""}${delta} → Puzzle Rating ${puzzleRating}`;
     updatePuzzleActionButton();
     return;
   }
@@ -420,12 +477,11 @@ async function onPuzzleSquareClick(sq) {
 
   if (puzzleSolutionIndex >= puzzleSolution.length) {
     puzzleLocked = true;
-    if (!puzzleMissedAlready) {
-      puzzleRating += 15;
-      savePuzzleRating();
-      document.getElementById("your-rating").textContent = puzzleRating;
-    }
-    statusEl.textContent = `Solved! Puzzle Rating ${puzzleRating}`;
+    const delta = computePuzzleRatingDelta();
+    puzzleRating = clamp(puzzleRating + delta, 100, 3000);
+    savePuzzleRating();
+    document.getElementById("your-rating").textContent = puzzleRating;
+    statusEl.textContent = `Solved! ${delta >= 0 ? "+" : ""}${delta} → Puzzle Rating ${puzzleRating}`;
     updatePuzzleActionButton();
   } else {
     statusEl.textContent = `Puzzle Rating ${puzzleRating} — find the best move.`;
@@ -588,9 +644,9 @@ function loadDrill(drill) {
   document.getElementById("drill-controls").classList.remove("hidden");
 
   drillGame = drill.fen ? new Chess(drill.fen) : new Chess();
-  
+
   console.log(drill);
-  
+
   drillSolution = drill.solution.slice();
   drillSolutionIndex = 0;
   drillPlayerColor = drill.playerColor;
