@@ -211,10 +211,12 @@ function savePuzzleRating() {
 }
 
 async function loadNextPuzzle() {
+  console.log("Loading puzzle...");
   const puzzle = await PuzzleDB.getRandomPuzzle(
     puzzleRating,
     lastPuzzleFen
   );
+  console.log("Puzzle:", puzzle);
 
   lastPuzzleFen = puzzle.fen;
   puzzleGame = new Chess(puzzle.fen);
