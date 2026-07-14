@@ -125,26 +125,24 @@ function updateDefaultModeButtonLabel() {
 }
 
 // --- Clear all saved data ---
-function clearAllSavedData() {
-  document.querySelectorAll(".menu-item.open").forEach((item) => {
-    item.classList.remove("open");
-  });
-
-  if (!confirm("Clear all saved data? This will reset the website completely and cannot be undone.")) {
-    return;
-  }
-
+async function clearAllSavedData() {
+  // Local storage
   localStorage.clear();
   sessionStorage.clear();
 
+  // Cache Storage
   if ("caches" in window) {
-    caches.keys().then((keys) => {
-      keys.forEach((key) => caches.delete(key));
-    });
+    const cacheNames = await caches.keys();
+    await Promise.all(cacheNames.map(name => caches.delete(name)));
   }
 
+  // Delete puzzle databases
+  indexedDB.deleteDatabase("PuzzleDatabases");
+
+  alert("Saved data cleared. Reloading...");
   location.reload();
 }
+
 window.clearAllSavedData = clearAllSavedData;
 
 const STARTING_CLOCK_SECONDS = 600;
