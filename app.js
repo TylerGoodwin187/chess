@@ -210,10 +210,7 @@ let puzzleGame = null;
 let puzzleSolution = [];
 let puzzleSolutionIndex = 0;
 let puzzlePlayerColor = "w";
-const PUZZLE_RATING_FLOOR = 400; // puzzle rating starts here and can never drop below it
-let puzzleRating = Math.max(
-  PUZZLE_RATING_FLOOR,
-  parseInt(localStorage.getItem("chess_puzzle_rating") || "400", 10)
+let puzzleRating = Math.max(399, parseInt(localStorage.getItem("chess_puzzle_rating") || "399", 10)
 );
 let puzzleAwaitingReply = false;
 let puzzleLocked = false;
@@ -256,7 +253,7 @@ function computePuzzleRatingDelta() {
   S = clamp(S, -1, 1);
 
   const puzzleRatingValue = parseInt(document.getElementById("maia-rating").textContent, 10) || puzzleRating;
-  const E = 1 / (1 + Math.pow(10, (puzzleRatingValue - puzzleRating) / 400));
+  const E = 1 / (1 + Math.pow(10, (puzzleRatingValue - puzzleRating) / 399));
 
   return Math.round(PUZZLE_RATING_K * (S - E));
 }
@@ -400,10 +397,9 @@ function giveUpPuzzle() {
 
   // Giving up scores like a worst-case attempt (S = -1) against this puzzle's Elo.
   const puzzleRatingValue = parseInt(document.getElementById("maia-rating").textContent, 10) || puzzleRating;
-  const E = 1 / (1 + Math.pow(10, (puzzleRatingValue - puzzleRating) / 400));
+  const E = 1 / (1 + Math.pow(10, (puzzleRatingValue - puzzleRating) / 399));
   const delta = Math.round(PUZZLE_RATING_K * (-1 - E));
-  puzzleRating = clamp(puzzleRating + delta, PUZZLE_RATING_FLOOR, 3000);
-  savePuzzleRating();
+  puzzleRating = clamp(puzzleRating + delta, 399, 3000);  savePuzzleRating();
   document.getElementById("your-rating").textContent = puzzleRating;
 
   const sanParts = [];
@@ -485,7 +481,7 @@ async function onPuzzleSquareClick(sq) {
   if (puzzleSolutionIndex >= puzzleSolution.length) {
     puzzleLocked = true;
     const delta = computePuzzleRatingDelta();
-    puzzleRating = clamp(puzzleRating + delta, PUZZLE_RATING_FLOOR, 3000);
+    puzzleRating = clamp(puzzleRating + delta, 399, 3000);
     savePuzzleRating();
     document.getElementById("your-rating").textContent = puzzleRating;
     statusEl.textContent = `Solved! ${delta >= 0 ? "+" : ""}${delta} → Puzzle Rating ${puzzleRating}`;
@@ -510,7 +506,7 @@ async function onPuzzleSquareClick(sq) {
   if (puzzleSolutionIndex >= puzzleSolution.length) {
     puzzleLocked = true;
     const delta = computePuzzleRatingDelta();
-    puzzleRating = clamp(puzzleRating + delta, PUZZLE_RATING_FLOOR, 3000);
+    puzzleRating = clamp(puzzleRating + delta, 399, 3000);
     savePuzzleRating();
     document.getElementById("your-rating").textContent = puzzleRating;
     statusEl.textContent = `Solved! ${delta >= 0 ? "+" : ""}${delta} → Puzzle Rating ${puzzleRating}`;
