@@ -11,6 +11,7 @@ let resignedBy = null;
 let gameTimedOut = false;
 let timedOutColor = null;
 let historyRecorded = false;
+let puzzleDB = null;
 
 const MAIA_ELO = localStorage.getItem("chess_my_rating"); // Maia's own play strength — tied to your outcomes
 let myRating = parseInt(localStorage.getItem("chess_my_rating") || "250", 10);
