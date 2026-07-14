@@ -73,11 +73,10 @@ function updateSoundButtonLabel() {
 
 // Sound files expected in the project root, next to index.html:
 // move.mp3, capture.mp3, check.mp3, checkmate.mp3, draw.mp3, lowtime.mp3
-// (no resign.mp3 — resignation uses the checkmate sound)
 const SOUND_FILES = ["move", "capture", "check", "checkmate", "draw", "lowtime"];
 const soundCache = {};
 for (const name of SOUND_FILES) {
-  const audio = new Audio(`./${name}.mp3`);
+  const audio = new Audio(`./sounds/${name}.mp3`);
   audio.preload = "auto";
   soundCache[name] = audio;
 }
