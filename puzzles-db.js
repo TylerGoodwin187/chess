@@ -216,11 +216,60 @@ function queryPuzzleNearRating(db, targetRating, excludeFens) {
   return null;
 }
 
+// One-time-per-file diagnostic so it's obvious in the console whether the
+// `rating` column is actually populated per-row, or mostly/entirely NULL
+// (which would explain every rating-window query matching zero rows).
+const loggedDbDiagnostics = new Set();
+function logDbDiagnostics(db, filename) {
+  if (loggedDbDiagnostics.has(filename)) return;
+  loggedDbDiagnostics.add(filename);
+  try {
+    const stmt = db.prepare(`
+      SELECT COUNT(*) AS total,
+             COUNT(rating) AS haveRating,
+             MIN(CAST(rating AS INTEGER)) AS minR,
+             MAX(CAST(rating AS INTEGER)) AS maxR
+      FROM puzzles
+    `);
+    if (stmt.step()) {
+      console.log(`[PuzzleDB] ${filename} diagnostics:`, stmt.getAsObject());
+    }
+    stmt.free();
+  } catch (e) {
+    console.warn(`[PuzzleDB] Could not read diagnostics for ${filename}:`, e);
+  }
+}
+
+// Last-resort fallback: ignore rating entirely and just grab any puzzle from
+// the correct bucket file. Used only if rating-window matching comes back
+// empty at every window, which most likely means the per-row rating column
+// isn't reliably populated for this dataset.
+function queryAnyPuzzle(db, excludeFens) {
+  const exclusions = Array.isArray(excludeFens) ? excludeFens : (excludeFens ? [excludeFens] : []);
+  const hasExclusions = exclusions.length > 0;
+  const whereClause = hasExclusions
+    ? `WHERE fen NOT IN (${exclusions.map(() => "?").join(",")})`
+    : "";
+
+  const stmt = db.prepare(`SELECT fen, moves, rating FROM puzzles ${whereClause} ORDER BY RANDOM() LIMIT 1`);
+  let row = null;
+  try {
+    if (stmt.step(hasExclusions ? exclusions : [])) {
+      row = stmt.getAsObject();
+    }
+  } finally {
+    stmt.free();
+  }
+  return row;
+}
+
 async function getRandomPuzzle(rating, excludeFens) {
   console.log("Getting puzzle near rating", rating, "...");
   const filename = dbFileForRating(rating);
   const db = await ensureDbLoaded(filename);
   console.log("Database loaded");
+
+  logDbDiagnostics(db, filename);
 
   const exclusions = Array.isArray(excludeFens) ? excludeFens : (excludeFens ? [excludeFens] : []);
 
@@ -230,6 +279,20 @@ async function getRandomPuzzle(rating, excludeFens) {
   // sparse pool), drop the exclusion rather than fail outright.
   if (!row && exclusions.length > 0) {
     row = queryPuzzleNearRating(db, rating, []);
+  }
+
+  // Rating-window matching came back completely empty even with no
+  // exclusions and the widest window — the rating column for this dataset
+  // is probably unreliable (NULL/unpopulated). Fall back to picking any
+  // puzzle from the correct bucket file instead of failing the whole mode.
+  if (!row) {
+    console.warn(
+      `[PuzzleDB] No rating-matched puzzle found in ${filename} — rating column may be sparse or NULL. Falling back to any puzzle in this bucket.`
+    );
+    row = queryAnyPuzzle(db, exclusions);
+    if (!row && exclusions.length > 0) {
+      row = queryAnyPuzzle(db, []);
+    }
   }
 
   console.log(row);
