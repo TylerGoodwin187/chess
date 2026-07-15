@@ -230,33 +230,43 @@ function savePuzzleRating() {
 }
 
 function useHint() {
-  if (!inPuzzleMode || puzzleLocked || puzzleAwaitingReply) return;
 
-  const move = puzzleSolution[puzzleSolutionIndex];
-  if (!move) return;
+  if (inPuzzleMode) {
+    if (puzzleLocked || puzzleAwaitingReply) return;
 
-  puzzleHintsUsed++;
+    const move = puzzleSolution[puzzleSolutionIndex];
+    if (!move) return;
 
-  const from = move.slice(0, 2);
-  const to = move.slice(2, 4);
+    puzzleHintsUsed++;
 
-  if (puzzleHintStage === 0) {
-    // highlight piece
-    hintSquares = [from];
-    puzzleHintStage = 1;
-  } 
-  else if (puzzleHintStage === 1) {
-    // highlight destination
-    hintSquares = [from, to];
-    puzzleHintStage = 2;
+    const from = move.slice(0,2);
+    const to = move.slice(2,4);
+
+    if (puzzleHintStage === 0) {
+      hintSquares = [from];
+      puzzleHintStage = 1;
+    } 
+    else if (puzzleHintStage === 1) {
+      hintSquares = [from,to];
+      puzzleHintStage = 2;
+    }
+
+    renderBoard();
+    return;
   }
-  else {
-    // restart hint cycle for next move
-    hintSquares = [];
-    puzzleHintStage = 0;
-  }
 
-  renderBoard();
+
+  if (inDrillMode) {
+    const move = drillSolution[drillSolutionIndex];
+    if (!move || drillLocked || drillAwaitingReply) return;
+
+    hintSquares = [
+      move.slice(0,2),
+      move.slice(2,4)
+    ];
+
+    renderBoard();
+  }
 }
 
 window.useHint = useHint;
