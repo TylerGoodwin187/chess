@@ -351,10 +351,10 @@ async function loadNextPuzzle() {
   puzzleAwaitingReply = false;
   puzzleLocked = false;
   puzzleMissedAlready = false;
-  puzzleStartTime = performance.now();
-  puzzleWrongAttempts = 0;
   puzzleHintsUsed = 0;
   hintSquares = [];
+  puzzleStartTime = performance.now();
+  puzzleWrongAttempts = 0;
   puzzleHintStage = 0;
   selectedSquare = null;
 
@@ -445,6 +445,8 @@ function restoreLastMoveFromRealGame() {
 function giveUpPuzzle() {
   if (!inPuzzleMode || puzzleLocked) return;
   puzzleLocked = true;
+  hintSquares = [];
+  puzzleHintStage = 0;
 
   // Giving up scores like a worst-case attempt (S = -1) against this puzzle's Elo.
   const puzzleRatingValue = parseInt(document.getElementById("maia-rating").textContent, 10) || puzzleRating;
