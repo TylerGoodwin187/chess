@@ -375,17 +375,19 @@ async function loadNextPuzzle() {
 function updatePuzzleActionButton() {
   const btn = document.getElementById("puzzle-action-btn");
   if (!btn) return;
-  btn.textContent = puzzleLocked ? "Next" : "Give Up";
+  btn.textContent = "Give Up";
 }
 
 async function handlePuzzleAction() {
-  if (puzzleLocked) {
-    await loadNextPuzzle();
-  } else {
     giveUpPuzzle();
-  }
 }
+
 window.handlePuzzleAction = handlePuzzleAction;
+
+async function autoNextPuzzle() {
+  await humanDelay(1000); // wait 1 second
+  await loadNextPuzzle();
+}
 
 async function enterPuzzleMode() {
   document.querySelectorAll(".menu-item.open").forEach((item) => item.classList.remove("open"));
@@ -538,7 +540,8 @@ async function onPuzzleSquareClick(sq) {
     savePuzzleRating();
     document.getElementById("your-rating").textContent = puzzleRating;
     statusEl.textContent = `Solved! ${delta >= 0 ? "+" : ""}${delta} → Puzzle Rating ${puzzleRating}`;
-    updatePuzzleActionButton();
+    
+    autoNextPuzzle();
     return;
   }
 
@@ -563,7 +566,7 @@ async function onPuzzleSquareClick(sq) {
     savePuzzleRating();
     document.getElementById("your-rating").textContent = puzzleRating;
     statusEl.textContent = `Solved! ${delta >= 0 ? "+" : ""}${delta} → Puzzle Rating ${puzzleRating}`;
-    updatePuzzleActionButton();
+    autoNextPuzzle();
   } else {
     statusEl.textContent = `Puzzle Rating ${puzzleRating} — find the best move.`;
   }
