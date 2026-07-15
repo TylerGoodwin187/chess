@@ -738,6 +738,8 @@ function loadDrill(drill) {
   drillLocked = false;
   drillAwaitingReply = false;
   selectedSquare = null;
+  hintSquares = [];
+  puzzleHintStage = 0;
   lastMoveFrom = null;
   lastMoveTo = null;
 
