@@ -354,6 +354,8 @@ async function loadNextPuzzle() {
   puzzleStartTime = performance.now();
   puzzleWrongAttempts = 0;
   puzzleHintsUsed = 0;
+  hintSquares = [];
+  puzzleHintStage = 0;
   selectedSquare = null;
 
   boardFlipped = puzzlePlayerColor === "b";
