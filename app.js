@@ -38,8 +38,9 @@ const hadPriorSession = !!localStorage.getItem("chess_active_mode"); // used onc
 function updateModeBadge() {
   const el = document.getElementById("mode-badge");
   if (!el) return;
-  if (inMode) {
-    el.textContent = "Learn";
+
+  if (inPuzzleMode) {
+    el.textContent = "Puzzle";
   } else if (inDrillMode) {
     el.textContent = currentDrillCategory === "endgame" ? "Endgame" : "Opening";
   } else {
