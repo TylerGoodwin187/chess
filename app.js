@@ -12,10 +12,10 @@ let gameTimedOut = false;
 let timedOutColor = null;
 let historyRecorded = false;
 let puzzleDB = null;
-let hintStep = 0;
-let hintSquare = null;
-let hintMoveIndex = 0;
-let hintMoves = [];
+let hintStage = 0;
+let hintMovesUsed = 0;
+let currentHintMoveIndex = 0;
+let currentSolution = [];
 
 const MAIA_ELO = localStorage.getItem("chess_my_rating"); // Maia's own play strength — tied to your outcomes
 let myRating = parseInt(localStorage.getItem("chess_my_rating") || "250", 10);
