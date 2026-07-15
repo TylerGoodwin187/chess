@@ -220,6 +220,8 @@ let puzzleMissedAlready = false;
 
 // Puzzle performance tracking
 let puzzleStartTime = 0;
+let puzzleHintStage = 0; // 0 = nothing, 1 = show piece, 2 = show destination
+let hintSquares = [];
 let puzzleWrongAttempts = 0;
 let puzzleHintsUsed = 0;
 function savePuzzleRating() {
@@ -227,32 +229,33 @@ function savePuzzleRating() {
 }
 
 function useHint() {
-    if (!hintMoves || hintMoves.length === 0) return;
+  if (!inPuzzleMode || puzzleLocked || puzzleAwaitingReply) return;
 
-    if (hintMoveIndex >= hintMoves.length) {
-        hintSquare = null;
-        renderBoard();
-        return;
-    }
+  const move = puzzleSolution[puzzleSolutionIndex];
+  if (!move) return;
 
-    const move = hintMoves[hintMoveIndex];
+  puzzleHintsUsed++;
 
-    const from = move.slice(0, 2);
-    const to = move.slice(2, 4);
+  const from = move.slice(0, 2);
+  const to = move.slice(2, 4);
 
-    if (hintStep === 0) {
-        // Highlight piece
-        hintSquare = from;
-        hintStep = 1;
+  if (puzzleHintStage === 0) {
+    // highlight piece
+    hintSquares = [from];
+    puzzleHintStage = 1;
+  } 
+  else if (puzzleHintStage === 1) {
+    // highlight destination
+    hintSquares = [from, to];
+    puzzleHintStage = 2;
+  }
+  else {
+    // restart hint cycle for next move
+    hintSquares = [];
+    puzzleHintStage = 0;
+  }
 
-    } else {
-        // Highlight destination
-        hintSquare = to;
-        hintStep = 0;
-        hintMoveIndex++;
-    }
-
-    renderBoard();
+  renderBoard();
 }
 
 window.useHint = useHint;
@@ -1119,8 +1122,15 @@ function renderBoard() {
       const cell = document.createElement("div");
       cell.className = "square " + (((fileIdx + displayRank) % 2 === 0) ? "dark" : "light");
       cell.dataset.square = sq;
+      
       if (sq === selectedSquare) cell.classList.add("selected");
+      
+      if (hintSquares.includes(sq)) {
+        cell.classList.add("hint-highlight");
+      }
+      
       if (sq === lastMoveFrom || sq === lastMoveTo) cell.classList.add("last-move");
+      
       if (legalTargets.includes(sq)) {
         cell.classList.add("legal-target");
         if (piece) cell.classList.add("has-piece");
