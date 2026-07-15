@@ -12,6 +12,10 @@ let gameTimedOut = false;
 let timedOutColor = null;
 let historyRecorded = false;
 let puzzleDB = null;
+let hintStep = 0;
+let hintSquare = null;
+let hintMoveIndex = 0;
+let hintMoves = [];
 
 const MAIA_ELO = localStorage.getItem("chess_my_rating"); // Maia's own play strength — tied to your outcomes
 let myRating = parseInt(localStorage.getItem("chess_my_rating") || "250", 10);
@@ -28,13 +32,13 @@ function clamp(v, lo, hi) {
 // ---------- Settings ----------
 let username = localStorage.getItem("chess_username") || "You";
 let soundEnabled = localStorage.getItem("chess_sound_enabled") !== "false"; // default on
-let defaultMode = localStorage.getItem("chess_default_mode") || "unranked"; // "unranked" | "ranked" | "puzzles"
+let defaultMode = localStorage.getItem("chess_default_mode") || "unranked"; // "unranked" | "ranked" | "s"
 const hadPriorSession = !!localStorage.getItem("chess_active_mode"); // used once at startup below
 
 function updateModeBadge() {
   const el = document.getElementById("mode-badge");
   if (!el) return;
-  if (inPuzzleMode) {
+  if (inMode) {
     el.textContent = "Learn";
   } else if (inDrillMode) {
     el.textContent = currentDrillCategory === "endgame" ? "Endgame" : "Opening";
@@ -221,6 +225,37 @@ let puzzleHintsUsed = 0;
 function savePuzzleRating() {
   localStorage.setItem("chess_puzzle_rating", String(puzzleRating));
 }
+
+function useHint() {
+    if (!hintMoves || hintMoves.length === 0) return;
+
+    if (hintMoveIndex >= hintMoves.length) {
+        hintSquare = null;
+        renderBoard();
+        return;
+    }
+
+    const move = hintMoves[hintMoveIndex];
+
+    const from = move.slice(0, 2);
+    const to = move.slice(2, 4);
+
+    if (hintStep === 0) {
+        // Highlight piece
+        hintSquare = from;
+        hintStep = 1;
+
+    } else {
+        // Highlight destination
+        hintSquare = to;
+        hintStep = 0;
+        hintMoveIndex++;
+    }
+
+    renderBoard();
+}
+
+window.useHint = useHint;
 
 // ---------- Puzzle rating formula ----------
 // Rating change = K * (performance - expected), Elo-style, where "performance" (S)
