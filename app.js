@@ -770,6 +770,8 @@ window.restartCurrentDrill = restartCurrentDrill;
 
 function exitDrillMode() {
   inDrillMode = false;
+  hintSquares = [];
+  puzzleHintStage = 0;
   updateModeBadge();
   document.getElementById("drill-controls").classList.add("hidden");
   gameControlsEl.classList.remove("hidden");
