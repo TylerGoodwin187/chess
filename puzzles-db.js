@@ -197,7 +197,7 @@ function queryPuzzleNearRating(db, targetRating, excludeFens) {
     const hi = targetRating + window;
 
     const sql = `SELECT fen, moves, rating FROM puzzles
-                 WHERE rating AS INTEGER BETWEEN ? AND ? ${notInClause}
+                 WHERE rating BETWEEN ? AND ? ${notInClause}
                  ORDER BY RANDOM() LIMIT 1`;
     console.log(sql);
     console.log("Target:", targetRating);
@@ -207,27 +207,16 @@ function queryPuzzleNearRating(db, targetRating, excludeFens) {
     const stmt = db.prepare(sql);
     let row = null;
     try {
-      const bindings = hasExclusions ? [lo, hi, ...exclusions] : [lo, hi];
-      console.log({
-          lo,
-          hi,
-          bindings,
-          exclusions
-      });
-      const found = stmt.step(bindings);
-      console.log("Found?", found);
-      
-      if (found) {
-          row = stmt.getAsObject();
-      }
-      console.log(bindings);
-      if (stmt.step(bindings)) {
-        console.log("Found:", stmt.getAsObject());
-        row = stmt.getAsObject();
-      }
+        const bindings = hasExclusions ? [lo, hi, ...exclusions] : [lo, hi];
+    
+        if (stmt.step(bindings)) {
+            row = stmt.getAsObject();
+            console.log("Found:", row);
+        } else {
+            console.log("No match in this window.");
+        }
     } finally {
-      console.log("No match in this window.");
-      stmt.free();
+        stmt.free();
     }
 
     if (row) return row;
