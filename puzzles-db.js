@@ -188,40 +188,43 @@ const RATING_SEARCH_WINDOWS = [0, 1, 2, 3, 4, 5];
 function queryPuzzleNearRating(db, targetRating, excludeFens) {
   const exclusions = Array.isArray(excludeFens) ? excludeFens : (excludeFens ? [excludeFens] : []);
   const hasExclusions = exclusions.length > 0;
+
   const notInClause = hasExclusions
     ? `AND fen NOT IN (${exclusions.map(() => "?").join(",")})`
     : "";
 
-  for (const window of RATING_SEARCH_WINDOWS) {
-    const lo = targetRating - window;
-    const hi = targetRating + window;
+  const sql = `
+    SELECT fen, moves, rating
+    FROM puzzles
+    WHERE rating = ?
+    ${notInClause}
+    ORDER BY RANDOM()
+    LIMIT 1
+  `;
 
-    const sql = `SELECT fen, moves, rating FROM puzzles
-                 WHERE rating BETWEEN ? AND ? ${notInClause}
-                 ORDER BY RANDOM() LIMIT 1`;
-    console.log(sql);
-    console.log("Target:", targetRating);
-    console.log("Window:", window);
-    console.log("Bounds:", lo, hi);
-    console.log("Excluded:", exclusions.length);
-    const stmt = db.prepare(sql);
-    let row = null;
-    try {
-        const bindings = hasExclusions ? [lo, hi, ...exclusions] : [lo, hi];
-    
-        if (stmt.step(bindings)) {
-            row = stmt.getAsObject();
-            console.log("Found:", row);
-        } else {
-            console.log("No match in this window.");
-        }
-    } finally {
-        stmt.free();
+  const stmt = db.prepare(sql);
+
+  let row = null;
+
+  try {
+    const bindings = hasExclusions
+      ? [targetRating, ...exclusions]
+      : [targetRating];
+
+    stmt.bind(bindings);
+
+    if (stmt.step()) {
+      row = stmt.getAsObject();
+      console.log("Found:", row);
+    } else {
+      console.log("No puzzle at rating:", targetRating);
     }
 
-    if (row) return row;
+  } finally {
+    stmt.free();
   }
-  return null;
+
+  return row;
 }
 
 // One-time-per-file diagnostic so it's obvious in the console whether the
