@@ -407,6 +407,8 @@ window.enterPuzzleMode = enterPuzzleMode;
 
 function exitPuzzleMode() {
   inPuzzleMode = false;
+  hintSquares = [];
+  puzzleHintStage = 0;
   updateModeBadge();
   puzzleControlsEl.classList.add("hidden");
   gameControlsEl.classList.remove("hidden");
