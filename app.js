@@ -375,11 +375,12 @@ async function loadNextPuzzle() {
 function updatePuzzleActionButton() {
   const btn = document.getElementById("puzzle-action-btn");
   if (!btn) return;
+
   btn.textContent = "Give Up";
 }
 
 async function handlePuzzleAction() {
-    giveUpPuzzle();
+  giveUpPuzzle();
 }
 
 window.handlePuzzleAction = handlePuzzleAction;
