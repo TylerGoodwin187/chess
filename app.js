@@ -764,6 +764,8 @@ function loadDrill(drill) {
 
 function restartCurrentDrill() {
   if (!inDrillMode || !currentDrill) return;
+  hintSquares = [];
+  puzzleHintStage = 0;
   loadDrill(currentDrill);
 }
 window.restartCurrentDrill = restartCurrentDrill;
