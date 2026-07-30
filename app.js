@@ -17,22 +17,42 @@ let hintMovesUsed = 0;
 let currentHintMoveIndex = 0;
 let currentSolution = [];
 
-const MAIA_ELO = localStorage.getItem("chess_my_rating"); // Maia's own play strength — tied to your outcomes
+let MAIA_ELO = localStorage.getItem("chess_my_rating") || "250" // Maia's own play strength — tied to your outcomes
+
 let myRating = parseInt(localStorage.getItem("chess_my_rating") || "250", 10);
 
 function saveMyRating() {
   localStorage.setItem("chess_my_rating", String(myRating));
 }
 
+MAIA_ELO = String(myRating); 
+
+
 // ---------- Small helpers ----------
+
 function clamp(v, lo, hi) {
   return Math.min(hi, Math.max(lo, v));
 }
 
+
 // ---------- Settings ----------
+
 let username = localStorage.getItem("chess_username") || "You";
+
 let soundEnabled = localStorage.getItem("chess_sound_enabled") !== "false"; // default on
+
 let defaultMode = localStorage.getItem("chess_default_mode") || "unranked"; // "unranked" | "ranked" | "s"
+
+let currentMode;
+
+if (defaultMode === "ranked") {
+    currentMode = "rated";
+} else if (defaultMode === "puzzles") {
+    currentMode = "puzzles";
+} else {
+    currentMode = "unrated";
+}
+
 const hadPriorSession = !!localStorage.getItem("chess_active_mode"); // used once at startup below
 
 function updateModeBadge() {
@@ -47,6 +67,7 @@ function updateModeBadge() {
     el.textContent = currentMode === "rated" ? "Rated" : "Unrated";
   }
 }
+
 
 // --- Username ---
 function setUsername() {
@@ -66,6 +87,7 @@ function updateUsernameDisplay() {
   const btn = document.getElementById("settings-username-btn");
   if (btn) btn.textContent = "Username: " + username;
 }
+
 
 // --- Sound ---
 function toggleSound() {
@@ -113,6 +135,7 @@ function soundForMove(gameObj, moveResult) {
   return "move";
 }
 
+
 // --- Default game mode ---
 const DEFAULT_MODE_ORDER = ["unranked", "ranked", "puzzles"];
 function cycleDefaultMode() {
@@ -128,6 +151,7 @@ function updateDefaultModeButtonLabel() {
   const btn = document.getElementById("settings-defaultmode-btn");
   if (btn) btn.textContent = "Default: " + defaultMode.charAt(0).toUpperCase() + defaultMode.slice(1);
 }
+
 
 // --- Clear all saved data ---
 async function clearAllSavedData() {
@@ -169,7 +193,16 @@ function humanDelay() {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-let currentMode = localStorage.getItem("chess_active_mode") || (defaultMode === "ranked" ? "rated" : "unrated");
+// We ignore 'chess_active_mode' on a fresh load to respect the 'Default Mode' setting
+let currentMode;
+if (defaultMode === "ranked") {
+    currentMode = "rated";
+} else if (defaultMode === "puzzles") {
+    currentMode = "puzzles";
+} else {
+    currentMode = "unrated";
+}
+
 let gameToken = 0;
 
 const boardEl = document.getElementById("board");
@@ -200,11 +233,9 @@ function isGameLocked() {
   return game.game_over() || gameResigned || gameTimedOut;
 }
 
+
 // ---------- Puzzle mode ----------
 
-// Track a short history of recently-served puzzle FENs (not just the last
-// one) so the rating-window query has more to exclude and stops handing
-// back the same puzzle every couple of loads.
 let recentPuzzleFens = [];
 const RECENT_PUZZLE_HISTORY = 25;
 
@@ -270,6 +301,7 @@ function useHint() {
 }
 
 window.useHint = useHint;
+
 
 // ---------- Puzzle rating formula ----------
 // Rating change = K * (performance - expected), Elo-style, where "performance" (S)
@@ -386,7 +418,7 @@ async function handlePuzzleAction() {
 window.handlePuzzleAction = handlePuzzleAction;
 
 async function autoNextPuzzle() {
-  await humanDelay(1000); // wait 1 second
+  await humanDelay(0750); // wait 3/4 second
   await loadNextPuzzle();
 }
 
@@ -1757,53 +1789,42 @@ window.closeOverlay = closeOverlay;
 
 // ---------- Init ----------
 
-async function init() {
-  renderHistory();
-  statusEl.textContent = "Loading...";
-  updateModeBadge();
-  updateUsernameDisplay();
-  updateSoundButtonLabel();
+async function init() { 
+  renderHistory(); 
+  statusEl.textContent = "Loading..."; 
+  updateModeBadge(); 
+  updateUsernameDisplay(); 
+  updateSoundButtonLabel(); 
   updateDefaultModeButtonLabel();
 
-  try {
-    const loaded = loadGame(currentMode);
-    applyLoadedState(loaded);
-    renderBoard();
-    renderMoveList();
-    updateClockDisplays();
-  } catch (err) {
-    console.error("Failed during initial board setup:", err);
+  // FIX: Route the app to either Puzzles or a standard game
+  if (currentMode === "puzzles") {
+      // Specialized startup for puzzles
+      await enterPuzzleMode(); 
+  } else {
+      // Standard startup for Rated/Unrated games
+      try { 
+          const loaded = loadGame(currentMode); 
+          applyLoadedState(loaded); 
+          renderBoard(); 
+          renderMoveList(); 
+          updateClockDisplays(); 
+      } catch (err) { 
+          console.error("Failed during initial board setup:", err); 
+      }
   }
 
-  try {
-    await MaiaTensor.initMoveTables("./data/");
+  // Final engine and opening data load
+  try { 
+    await MaiaTensor.initMoveTables("./data/"); 
     await loadOpeningsData();
-
-    engine = new MaiaEngine({
-      onStatus: (s) => {
-        if (s === "downloading") statusEl.textContent = "Downloading Maia model (first time only)...";
-      },
-      onProgress: (p) => {
-        statusEl.textContent = `Downloading Maia model (first time only)... ${p}%`;
-      },
-    });
-    await engine.load();
-
-    setInterval(tickClock, 1000);
-
-    if (!hadPriorSession && defaultMode === "puzzles") {
-      enterPuzzleMode();
-    } else if (isGameLocked()) {
-      showGameOverPopup();
-    } else {
-      updateStatusForTurn();
-      if (game.turn() !== playerColor) runMaiaTurn();
-    }
-  } catch (err) {
-    console.error("Failed to fully initialize the Maia engine:", err);
-    statusEl.textContent = "Something failed to load — check the console for details.";
-    statusEl.classList.remove("status-hidden");
-  }
+  } catch (err) { 
+    console.error("Failed to fully initialize the Maia engine:", err); 
+    statusEl.textContent = "Something failed to load — check the console for details."; 
+    statusEl.classList.remove("status-hidden"); 
+  } 
 }
+
+
 
 init();
